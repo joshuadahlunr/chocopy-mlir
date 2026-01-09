@@ -6,7 +6,7 @@
 #include <variant>
 #include <vector>
 
-#include "string_helpers.hpp"
+#include "diagnostics.hpp"
 
 namespace AST {
 	namespace detail {
@@ -37,22 +37,28 @@ namespace AST {
 		return std::any_cast<ref>(any);
 	}
 
+	struct node_base {
+		diagnostics::source_location location;
+	};
+
+	struct error : public node_base {};
+
 	struct lookup {
 		interned_string interned_name;
 	};
 	struct referenced {
 		ref reference;
 	};
-	struct type_lookup : public lookup { };
+	struct type_lookup : public node_base, public lookup { };
 	// TODO: Non lookup versions
-	struct list_type {
+	struct list_type : public node_base {
 		ref type;
 	};
 
 	struct ref_list {
 		std::vector<ref> elements;
 	};
-	struct block: public ref_list {};
+	struct block: public node_base, public ref_list {};
 
 
 
@@ -71,36 +77,39 @@ namespace AST {
 		ref return_type;
 		size_t num_parameters;
 	};
-	struct parameter_declaration {
+	struct parameter_declaration : public node_base {
 		interned_string name;
 		ref type;
 		size_t index;
 	};
 
-	struct variable_declaration {
+	struct variable_declaration : public node_base {
 		interned_string name;
 		ref type;
 		ref initial_value;
 	};
 
-	struct global_lookup : public lookup {};
-	struct global : public referenced {};
-	struct nonlocal_lookup : public lookup {};
-	struct nonlocal : public referenced {};
+	struct global_lookup : public node_base, public lookup {};
+	struct global : public node_base, public referenced {};
+	struct nonlocal_lookup : public node_base, public lookup {};
+	struct nonlocal : public node_base, public referenced {};
 
 
 
-	struct pass_statement {};
-	struct return_statement {
+	struct pass_statement : public node_base {};
+	struct return_statement : public node_base {
 		ref what = absent;
 	};
 
-	struct binary_op {
+	struct expression : public node_base {
+		ref type = absent;
+	};
+	struct binary_op : public expression {
 		ref lhs, rhs;
 	};
 	struct assignment: public binary_op {}; // I am modeling assignment as an expression... to allow chaining
 
-	struct if_statement {
+	struct if_statement : public node_base {
 		struct condition_block {
 			ref condition = absent;
 			struct block block;
@@ -118,7 +127,7 @@ namespace AST {
 
 
 
-	struct if_expression {
+	struct if_expression : public expression {
 		ref then, condition, else_;
 	};
 
@@ -141,7 +150,7 @@ namespace AST {
 	struct remainder : public binary_op {};
 	struct divide : public binary_op {};
 
-	struct unary_op {
+	struct unary_op : public expression {
 		ref what;
 	};
 
@@ -150,30 +159,30 @@ namespace AST {
 
 
 
-	struct list_literal: public ref_list {};
+	struct list_literal: public expression, public ref_list {};
 
-	struct variable_load_lookup: public lookup {};
-	struct variable_load: public referenced {};
-	struct variable_store_lookup: public lookup {};
-	struct variable_store: public referenced {};
+	struct variable_load_lookup: public expression, public lookup {};
+	struct variable_load: public expression, public referenced {};
+	struct variable_store_lookup: public expression, public lookup {};
+	struct variable_store: public expression, public referenced {};
 
-	struct member_access_lookup: public lookup {
+	struct member_access_lookup: public expression, public lookup {
 		ref lhs;
 	};
-	struct member_access: public referenced {
+	struct member_access: public expression, public referenced {
 		ref lhs;
 	};
 
-	struct array_index {
+	struct array_index : public expression {
 		ref lhs, rhs;
 	};
 
-	struct call: ref_list {
+	struct call: public expression, public ref_list {
 		ref lhs;
 	};
 
 
-	struct none {}; // None literal
+	struct none : public expression {}; // None literal
 
 
 	#define NODE_TYPES_STAMPER(X) \
@@ -243,15 +252,15 @@ namespace AST {
 		X(list_literal)
 
 	#define APPEND_COMMA(x) x ,
-
-	struct unused_spacer {};
-	struct node: public std::variant<NODE_TYPES_STAMPER(APPEND_COMMA) unused_spacer> {
-		using variant = std::variant<NODE_TYPES_STAMPER(APPEND_COMMA) unused_spacer>;
+	struct node: public std::variant<NODE_TYPES_STAMPER(APPEND_COMMA) error> {
+		using variant = std::variant<NODE_TYPES_STAMPER(APPEND_COMMA) error>;
 
 #define IMPLEMENT_HELPERS(type)\
 		bool is_##type() { return std::holds_alternative<type>(*this); }\
 		type& as_##type() { return std::get<type>(*this); }\
 		const type& as_##type() const { return std::get<type>(*this); }
+
+		bool is_error() { return std::holds_alternative<error>(*this); }
 
 		NODE_TYPES_STAMPER(IMPLEMENT_HELPERS)
 	};
@@ -265,14 +274,24 @@ namespace AST {
 		return out;
 	}
 
+	inline ref make_error(flattened& AST, const diagnostics::source_location& location) {
+		ref out = AST.size();
+		AST.emplace_back(error{location});
+		return out;
+	}
+
 	template<typename Treturn>
 	struct visiter {
+		AST::flattened& ast;
+
+		visiter(AST::flattened& ast) : ast(ast) {}
+
 #define IMPLEMENT_VISIT_DECL(type)\
-		virtual Treturn visit_##type(const type&, AST::ref ref) = 0;
+		virtual Treturn visit_##type(type& value, AST::ref ref) = 0;
 
 		NODE_TYPES_STAMPER(IMPLEMENT_VISIT_DECL)
 
-		Treturn visit(const node& n, AST::ref r) {
+		Treturn visit(node& n, AST::ref r) {
 			switch(n.index()) {
 #define IMPLEMENT_VISIT(type)\
 				case detail::variant_index_v<type, node::variant>:\
@@ -280,8 +299,14 @@ namespace AST {
 
 				NODE_TYPES_STAMPER(IMPLEMENT_VISIT)
 
-				default: throw std::runtime_error("Invalid node state");
+				case detail::variant_index_v<error, node::variant>:
+					// Do nothing on errors...
+				break; default: throw std::runtime_error("Invalid node state");
 			}
+		}
+
+		Treturn visit(const ref ref) {
+			return visit(ast[ref], ref);
 		}
 	};
 }

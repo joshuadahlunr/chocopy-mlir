@@ -1,7 +1,9 @@
 
 #include <iostream>
 
-#include "AST.print.hpp"
+#include "AST.hpp"
+#include "AST.print.hpp" // Print pass
+#include "AST.canonicalize_locations.hpp" // Update locaions to not be pointers but proper bytes
 #include "parser.hpp"
 
 int main(void) {
@@ -66,8 +68,12 @@ while i < len(nums):
 	auto parser = initialize_parser(ast, interner);
 
 	AST::ref root;
-	parser.parse(preprocess_indentation(test), root);
+	auto source = preprocess_indentation(test);
+	parser.parse(source, root, interner.intern("<generated>").data());
+	AST::canonicalize_locations{ast, source}.visit(root);
 	ast[builtin_block].as_block().elements.push_back(root);
+
+	if(!diagnostics::singleton().print()) return -1;
 
 	std::string reconstructed = AST::pretty_printer(ast).visit(builtin_block);
 	std::cout << reconstructed << std::endl;

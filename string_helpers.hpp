@@ -96,6 +96,23 @@ protected:
 	std::unordered_set<std::string_view> table;
 };
 
+inline std::vector<std::string_view> split(std::string_view str, char delimiter) {
+    std::vector<std::string_view> result;
+
+    size_t start = 0;
+    while (true) {
+        size_t pos = str.find(delimiter, start);
+        if (pos == std::string_view::npos) {
+            result.emplace_back(str.substr(start));
+            break;
+        }
+        result.emplace_back(str.substr(start, pos - start));
+        start = pos + 1;
+    }
+
+    return result;
+}
+
 namespace detail {
 	inline void append_utf8(std::string& out, uint32_t cp) {
 		// Check for invalid code points

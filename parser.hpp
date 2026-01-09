@@ -3,9 +3,11 @@
 #include "AST.hpp"
 #include "peglib.h"
 
+#include <cstddef>
 #include <optional>
 #include <cmath>
 #include <span>
+#include <string_view>
 
 struct IndentError : std::runtime_error {
 	using std::runtime_error::runtime_error;
@@ -31,12 +33,21 @@ inline std::string preprocess_indentation(const std::string& src) {
 
 	std::string line;
 	bool first = true;
+	size_t total_bytes = 0;
 
 	while (std::getline(in, line)) {
 		int col = 0;
 		bool saw_space = false;
 		bool saw_tab = false;
 		size_t i;
+		struct deferred_update {
+			size_t& total_bytes;
+			size_t& i;
+			
+			~deferred_update() {
+				total_bytes += i;
+			}
+		} deferred = {total_bytes, i};
 
 		// Measure indentation
 		for (i = 0; i < line.size(); ++ i)
@@ -48,8 +59,10 @@ inline std::string preprocess_indentation(const std::string& src) {
 				saw_tab = true;
 			} else break;
 
-		if (saw_space && saw_tab)
-			throw IndentError("Mixed tabs and spaces in indentation");
+		if (saw_space && saw_tab) {
+			diagnostics::singleton().push_error("Mixed tabs and spaces", line, {total_bytes + i, total_bytes + i + 1});
+			return "";
+		}
 
 		std::string trimmed = line.substr(i);
 
@@ -83,8 +96,10 @@ inline std::string preprocess_indentation(const std::string& src) {
 				else out << '}';
 				++replacements;
 			}
-			if (indent_stack.back() != col)
-				throw IndentError("Unaligned dedent level");
+			if (indent_stack.back() != col) {
+				diagnostics::singleton().push_error("Unaligned dedent level", line, {total_bytes + i, total_bytes + i + 1});
+				return "";
+			}
 			out << dedent_line;
 		} else out << line;
 
@@ -106,11 +121,12 @@ inline std::string preprocess_indentation(const std::string& src) {
 inline std::tuple<AST::flattened, string_interner, AST::ref> initialize_builtin_block() {
 	AST::flattened ast;
 	string_interner interner;
-	AST::block block;
+	AST::node_base internal {{0, 0, interner.intern("<builtin>")}};
+	AST::block block = {internal};
 	auto builtin_block = AST::make_node(ast, std::move(block));
 	AST::ref __4bytes__, object_ref, global_none;
 	{
-		AST::class_declaration i32;
+		AST::class_declaration i32 = {internal};
 		i32.name = interner.intern("__4bytes__");
 		i32.base = AST::absent;
 		i32.size = 32;
@@ -119,90 +135,90 @@ inline std::tuple<AST::flattened, string_interner, AST::ref> initialize_builtin_
 		block.elements.push_back(__4bytes__ = AST::make_node(ast, i32));
 	}
 	{
-		AST::class_declaration object;
+		AST::class_declaration object = {internal};
 		object.name = interner.intern("object");
 		object.base = AST::absent;
 		object.size = 32 * 3;
 		object.alignment = 32;
 		object.elements = {
 			AST::make_node(ast, AST::variable_declaration{
-				interner.intern("__tag__"),
+				internal, interner.intern("__tag__"),
 				__4bytes__, global_none = AST::make_node(ast, AST::none{})
 			}), AST::make_node(ast, AST::variable_declaration{
-				interner.intern("__size__"),
+				internal, interner.intern("__size__"),
 				__4bytes__, global_none
 			}), AST::make_node(ast, AST::variable_declaration{
-				interner.intern("__vtable__"),
+				internal, interner.intern("__vtable__"),
 				__4bytes__, global_none
 			})
 		};
 		block.elements.push_back(object_ref = AST::make_node(ast, object));
 	}
 	{
-		AST::class_declaration Int;
+		AST::class_declaration Int = {internal};
 		Int.name = interner.intern("int");
 		Int.base = object_ref;
 		Int.size = 32 * (3 + 1);
 		Int.alignment = 32;
 		Int.elements = {
 			AST::make_node(ast, AST::variable_declaration{
-				interner.intern("__int__"),
+				internal, interner.intern("__int__"),
 				__4bytes__, AST::make_node(ast, double(0))
 			})
 		};
 		block.elements.push_back(AST::make_node(ast, Int));
 	}
 	{
-		AST::class_declaration Int;
+		AST::class_declaration Int = {internal};
 		Int.name = interner.intern("float");
 		Int.base = object_ref;
 		Int.size = 32 * (3 + 1);
 		Int.alignment = 32;
 		Int.elements = {
 			AST::make_node(ast, AST::variable_declaration{
-				interner.intern("__float__"),
+				internal, interner.intern("__float__"),
 				__4bytes__, AST::make_node(ast, double(0))
 			})
 		};
 		block.elements.push_back(AST::make_node(ast, Int));
 	}
 	{
-		AST::class_declaration Bool;
+		AST::class_declaration Bool = {internal};
 		Bool.name = interner.intern("bool");
 		Bool.base = object_ref;
 		Bool.size = 32 * (3 + 1);
 		Bool.alignment = 32;
 		Bool.elements = {
 			AST::make_node(ast, AST::variable_declaration{
-				interner.intern("__bool__"),
+				internal, interner.intern("__bool__"),
 				__4bytes__, AST::make_node(ast, double(0))
 			})
 		};
 		block.elements.push_back(AST::make_node(ast, Bool));
 	}
 	{
-		AST::class_declaration str;
+		AST::class_declaration str = {internal};
 		str.name = interner.intern("str");
 		str.base = object_ref;
 		str.size = 32 * (3 + 1);
 		str.alignment = 32;
 		str.elements = {
 			AST::make_node(ast, AST::variable_declaration{
-				interner.intern("__len__"),
+				internal, interner.intern("__len__"),
 				__4bytes__, AST::make_node(ast, double(0))
 			})
 		};
 		block.elements.push_back(AST::make_node(ast, str));
 	}
 	{
-		AST::class_declaration list;
+		AST::class_declaration list = {internal};
 		list.name = interner.intern("list");
 		list.base = object_ref;
 		list.size = 32 * (3 + 1);
 		list.alignment = 32;
 		list.elements = {
 			AST::make_node(ast, AST::variable_declaration{
-				interner.intern("__len__"),
+				internal, interner.intern("__len__"),
 				__4bytes__, AST::make_node(ast, double(0))
 			})
 		};
@@ -235,8 +251,18 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 	//     std::cout << "< " << vs.name() << std::endl;
 	// });
 
+	constexpr static auto make_location = [](const peg::SemanticValues &vs) {
+		diagnostics::source_location out;
+		out.start_byte = size_t(vs.sv().data());
+		out.end_byte = size_t(vs.sv().data() + vs.sv().size());
+		out.filename = vs.path ? std::string_view{vs.path} : std::string_view{};
+		return out;
+	};
+
+	constexpr static auto no_type = AST::absent;
+
 	parser["program"] = [&ast](const peg::SemanticValues &vs) {
-		AST::block out;
+		AST::block out = {{make_location(vs)}};
 		for(auto& stmt: vs)
 			out.elements.push_back(AST::a2r(stmt));
 		return AST::make_node(ast, out);
@@ -244,13 +270,14 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 
 	parser["class_def"] = [&ast](const peg::SemanticValues &vs) {
 		AST::class_declaration_lookup decl = {std::any_cast<AST::block>(vs[4])};
+		decl.location = make_location(vs);
 		decl.name = std::any_cast<interned_string>(vs[0]);
 		decl.base = std::any_cast<interned_string>(vs[1]);
 		return AST::make_node(ast, decl);
 	};
 
 	parser["class_body"] = [&ast](const peg::SemanticValues &vs) {
-		AST::block out;
+		AST::block out = {{make_location(vs)}};
 		if(vs.choice() == 0) { // 'pass' NEWLINE
 			out.elements.push_back(AST::make_node(ast, AST::pass_statement{}));
 			return out;
@@ -281,6 +308,7 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 		break; default: throw std::runtime_error("func_def unreachable");
 		}
 
+		func.location = make_location(vs);
 		func.name = name;
 		func.return_type = return_type ? *return_type : AST::absent;
 		if(params) {
@@ -297,7 +325,7 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 	};
 
 	parser["func_body"] = [&ast](const peg::SemanticValues &vs) {
-		AST::block out;
+		AST::block out = {{make_location(vs)}};
 		for(auto& stmt: vs)
 			out.elements.push_back(AST::a2r(stmt));
 		return out;
@@ -314,19 +342,19 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 		auto [name, type] = std::any_cast<std::pair<interned_string, AST::ref>>(vs[0]);
 		auto initial_value = AST::a2r(vs[1]);
 		return AST::make_node(ast, AST::variable_declaration{
-			name, type, initial_value
+			make_location(vs), name, type, initial_value
 		});
 	};
 
 	parser["global_decl"] = [&ast](const peg::SemanticValues &vs) {
 		return AST::make_node(ast, AST::global_lookup{
-			std::any_cast<interned_string>(vs[0])
+			make_location(vs), std::any_cast<interned_string>(vs[0])
 		});
 	};
 
 	parser["nonlocal_decl"] = [&ast](const peg::SemanticValues &vs) {
 		return AST::make_node(ast, AST::nonlocal_lookup{
-			std::any_cast<interned_string>(vs[0])
+			make_location(vs), std::any_cast<interned_string>(vs[0])
 		});
 	};
 
@@ -337,15 +365,15 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 	parser["type"] = [&ast, identifier_parser = std::move(identifier_parser)](const peg::SemanticValues &vs) {
 		switch(vs.choice()) {
 		case 0: // IDENT
-			return AST::make_node(ast, AST::type_lookup{std::any_cast<interned_string>(vs[0])});
+			return AST::make_node(ast, AST::type_lookup{make_location(vs), std::any_cast<interned_string>(vs[0])});
 		case 1: { // STRING # NOTE: Required to be a valid IDENT!
 			auto raw = std::any_cast<interned_string>(vs[0]);
 			if(!identifier_parser.parse(raw))
-				throw std::runtime_error("Type strings should be proper identifiers!");
-			return AST::make_node(ast, AST::type_lookup{raw});
+				return AST::make_error(ast, diagnostics::singleton().push_error("Type strings should be proper identifiers!", vs.ss, make_location(vs)));
+			return AST::make_node(ast, AST::type_lookup{make_location(vs), raw});
 		}
 		case 2: // '[' type ']'
-			return AST::make_node(ast, AST::list_type{AST::a2r(vs[0])});
+			return AST::make_node(ast, AST::list_type{make_location(vs), AST::a2r(vs[0])});
 		default: throw std::runtime_error("type unreachable");
 		}
 	};
@@ -353,13 +381,16 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 	parser["simple_stmt"] = [&ast](const peg::SemanticValues &vs) {
 		switch (vs.choice()) {
 		case 0: // 'pass'
-			return AST::make_node(ast, AST::pass_statement{});
+			return AST::make_node(ast, AST::pass_statement{make_location(vs)});
 		case 1: // 'return' expr?
-			return AST::make_node(ast, AST::return_statement{vs.size() ? AST::a2r(vs[0]) : AST::absent});
+			return AST::make_node(ast, AST::return_statement{make_location(vs), vs.size() ? AST::a2r(vs[0]) : AST::absent});
 		case 2:{ // (target '=')* expr
 			auto lhs = AST::a2r(vs[0]);
-			for(size_t i = 1; i < vs.size(); ++i)
-				lhs = AST::make_node(ast, AST::assignment{lhs, AST::a2r(vs[i])});
+			for(size_t i = 1; i < vs.size(); ++i) {
+				AST::assignment expr = {make_location(vs)};
+				expr.lhs = lhs; expr.rhs = AST::a2r(vs[i]);
+				lhs = AST::make_node(ast, expr);
+			}
 			return lhs;
 		}
 		default: throw std::runtime_error("simple_stmt unreachable");
@@ -368,7 +399,7 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 
 	parser["target"] = [&ast](const peg::SemanticValues &vs) {
 		auto lookup = std::any_cast<interned_string>(vs[0]);
-		auto lhs = AST::make_node(ast, AST::variable_store_lookup{lookup});
+		auto lhs = AST::make_node(ast, AST::variable_store_lookup{{make_location(vs)}, lookup});
 		for(size_t i = 1; i < vs.size(); ++i)
 			if(vs[i].type() == typeid(AST::array_index)) {
 				auto index = std::any_cast<AST::array_index>(vs[i]);
@@ -383,7 +414,7 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 	};
 
 	parser["if_stmt"] = [&ast](const peg::SemanticValues &vs) {
-		AST::if_statement stmt;
+		AST::if_statement stmt = {make_location(vs)};
 		size_t elseless_size = std::floor(vs.size() / 2) * 2;
 		for(size_t i = 0; i < elseless_size; i += 2) {
 			stmt.condition_block_pairs.emplace_back(
@@ -400,20 +431,20 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 	};
 
 	parser["for_stmt"] = [&ast](const peg::SemanticValues &vs) {
-		AST::for_statement stmt = {std::any_cast<AST::block>(vs[2])};
+		AST::for_statement stmt = {make_location(vs), std::any_cast<AST::block>(vs[2])};
 		stmt.iterator = std::any_cast<interned_string>(vs[0]);
 		stmt.source = AST::a2r(vs[1]);
 		return AST::make_node(ast, stmt);
 	};
 
 	parser["while_stmt"] = [&ast](const peg::SemanticValues &vs) {
-		AST::while_statement stmt = {std::any_cast<AST::block>(vs[1])};
+		AST::while_statement stmt = {make_location(vs), std::any_cast<AST::block>(vs[1])};
 		stmt.condition = AST::a2r(vs[0]);
 		return AST::make_node(ast, stmt);
 	};
 
 	parser["block"] = [&ast](const peg::SemanticValues &vs) {
-		AST::block out;
+		AST::block out = {make_location(vs)};
 		std::span relevant = vs;
 		relevant = relevant.subspan(2, relevant.size() - 3); // Trim away the NEWLINE, INDENT, AND DEDENT
 		for(auto& stmt: relevant)
@@ -425,7 +456,7 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 		if(vs.size() == 1) // No if
 			return vs[0];
 
-		AST::if_expression expr;
+		AST::if_expression expr = {make_location(vs)};
 		expr.then = AST::a2r(vs[0]);
 		expr.condition = AST::a2r(vs[1]);
 		expr.else_ = AST::a2r(vs[2]);
@@ -435,8 +466,9 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 	parser["or_expr"] = [&ast](const peg::SemanticValues &vs) {
 		auto lhs = AST::a2r(vs[0]);
 		for(size_t i = 1; i < vs.size(); ++i) {
-			auto rhs = AST::a2r(vs[i]);
-			lhs = AST::make_node(ast, AST::logical_or{lhs, rhs});
+			AST::logical_or expr = {make_location(vs)};
+			expr.lhs = lhs; expr.rhs = AST::a2r(vs[i]);
+			lhs = AST::make_node(ast, expr);
 		}
 		return lhs;
 	};
@@ -444,15 +476,16 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 	parser["and_expr"] = [&ast](const peg::SemanticValues &vs) {
 		auto lhs = AST::a2r(vs[0]);
 		for(size_t i = 1; i < vs.size(); ++i) {
-			auto rhs = AST::a2r(vs[i]);
-			lhs = AST::make_node(ast, AST::logical_and{lhs, rhs});
+			AST::logical_and expr = {make_location(vs)};
+			expr.lhs = lhs; expr.rhs = AST::a2r(vs[i]);
+			lhs = AST::make_node(ast, expr);
 		}
 		return lhs;
 	};
 
 	parser["not_expr"] = [&ast](const peg::SemanticValues &vs) -> std::any {
 		if(vs.choice() == 0) { // 'not' not_expr
-			AST::logical_not not_;
+			AST::logical_not not_ = {make_location(vs)};
 			not_.what = AST::a2r(vs[0]);
 			return AST::make_node(ast, not_);
 		} else return vs[0];
@@ -464,20 +497,41 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 			auto token = vs.token(i - 1);
 			auto rhs = AST::a2r(vs[i]);
 			switch(token[0]){
-			break; case '=':
-				lhs = AST::make_node(ast, AST::equal{lhs, rhs});
-			break; case '!':
-				lhs = AST::make_node(ast, AST::not_equal{lhs, rhs});
+			break; case '=': {
+				AST::equal expr = {make_location(vs)};
+				expr.lhs = lhs; expr.rhs = rhs;
+				lhs = AST::make_node(ast, expr);
+			} 
+			break; case '!': {
+				AST::not_equal expr = {make_location(vs)};
+				expr.lhs = lhs; expr.rhs = rhs;
+				lhs = AST::make_node(ast, expr);
+			}
 			break; case '<':
-				if(token.size() == 1)
-					lhs = AST::make_node(ast, AST::less{lhs, rhs});
-				else lhs = AST::make_node(ast, AST::less_equal{lhs, rhs});
+				if(token.size() == 1){
+					AST::less expr = {make_location(vs)};
+					expr.lhs = lhs; expr.rhs = rhs;
+					lhs = AST::make_node(ast, expr);
+				} else {
+					AST::less_equal expr = {make_location(vs)};
+					expr.lhs = lhs; expr.rhs = rhs;
+					lhs = AST::make_node(ast, expr);
+				}
 			break; case '>':
-				if(token.size() == 1)
-					lhs = AST::make_node(ast, AST::greater{lhs, rhs});
-				else lhs = AST::make_node(ast, AST::greater_equal{lhs, rhs});
-			break; case 'i':
-				lhs = AST::make_node(ast, AST::is{lhs, rhs});
+				if(token.size() == 1){
+					AST::greater expr = {make_location(vs)};
+					expr.lhs = lhs; expr.rhs = rhs;
+					lhs = AST::make_node(ast, expr);
+				} else {
+					AST::greater_equal expr = {make_location(vs)};
+					expr.lhs = lhs; expr.rhs = rhs;
+					lhs = AST::make_node(ast, expr);
+				}
+			break; case 'i':{
+				AST::is expr = {make_location(vs)};
+				expr.lhs = lhs; expr.rhs = rhs;
+				lhs = AST::make_node(ast, expr);
+			}
 			break; default: throw std::runtime_error("compare_expr unreachable");
 			}
 		}
@@ -490,10 +544,16 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 			auto token = vs.token(i - 1);
 			auto rhs = AST::a2r(vs[i]);
 			switch(token[0]){
-			break; case '+':
-				lhs = AST::make_node(ast, AST::add{lhs, rhs});
-			break; case '-':
-				lhs = AST::make_node(ast, AST::subtract{lhs, rhs});
+			break; case '+': {
+				AST::add expr = {make_location(vs)};
+				expr.lhs = lhs; expr.rhs = rhs;
+				lhs = AST::make_node(ast, expr);
+			}
+			break; case '-': {
+				AST::subtract expr = {make_location(vs)};
+				expr.lhs = lhs; expr.rhs = rhs;
+				lhs = AST::make_node(ast, expr);
+			}
 			break; default: throw std::runtime_error("add_expr unreachable");
 			}
 		}
@@ -506,14 +566,26 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 			auto token = vs.token(i - 1);
 			auto rhs = AST::a2r(vs[i]);
 			switch(token[0]){
-			break; case '*':
-				lhs = AST::make_node(ast, AST::multiply{lhs, rhs});
+			break; case '*': {
+				AST::multiply expr = {make_location(vs)};
+				expr.lhs = lhs; expr.rhs = rhs;
+				lhs = AST::make_node(ast, expr);
+			}
 			break; case '/':
-				if(token.size() == 1)
-					lhs = AST::make_node(ast, AST::divide{lhs, rhs});
-				else lhs = AST::make_node(ast, AST::quotient{lhs, rhs});
-			break; case '%':
-				lhs = AST::make_node(ast, AST::remainder{lhs, rhs});
+				if(token.size() == 1) {
+					AST::divide expr = {make_location(vs)};
+					expr.lhs = lhs; expr.rhs = rhs;
+					lhs = AST::make_node(ast, expr);
+				} else {
+					AST::quotient expr = {make_location(vs)};
+					expr.lhs = lhs; expr.rhs = rhs;
+					lhs = AST::make_node(ast, expr);
+				}
+			break; case '%': {
+				AST::remainder expr = {make_location(vs)};
+				expr.lhs = lhs; expr.rhs = rhs;
+				lhs = AST::make_node(ast, expr);
+			}
 			break; default: throw std::runtime_error("mul_expr unreachable");
 			}
 		}
@@ -522,7 +594,7 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 
 	parser["unary_expr"] = [&ast](const peg::SemanticValues &vs) -> std::any {
 		if(vs.choice() == 0) { // '-' unary_expr
-			AST::negate neg;
+			AST::negate neg = {make_location(vs)};
 			neg.what = AST::a2r(vs[0]);
 			return AST::make_node(ast, neg);
 		} else return vs[0];
@@ -548,13 +620,13 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 	};
 
 	parser["member_expr"] = [&ast](const peg::SemanticValues &vs) {
-		AST::member_access_lookup out;
+		AST::member_access_lookup out = {make_location(vs)};
 		out.interned_name = std::any_cast<interned_string>(vs[0]);
 		return out;
 	};
 
 	parser["index_expr"] = [&ast](const peg::SemanticValues &vs) {
-		AST::array_index out;
+		AST::array_index out = {make_location(vs)};
 		out.rhs = AST::a2r(vs[0]);
 		return out;
 	};
@@ -562,11 +634,11 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 	parser["call_expr"] = [&ast](const peg::SemanticValues &vs) -> std::any {
 		if(vs.size())
 			return vs[0];
-		else return AST::call{}; // argumentless call!
+		else return AST::call{make_location(vs)}; // argumentless call!
 	};
 
 	parser["arg_list"] = [&ast](const peg::SemanticValues &vs) {
-		AST::call call;
+		AST::call call = {make_location(vs)};
 		for(auto& elem: vs)
 			call.elements.push_back(AST::a2r(elem));
 		return call;
@@ -575,7 +647,8 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 	parser["primary"] = [&ast](const peg::SemanticValues &vs) -> std::any {
 		switch (vs.choice()) {
 		case 1: { // IDENT
-			AST::variable_load_lookup lookup = {std::any_cast<interned_string>(vs[0])};
+			AST::variable_load_lookup lookup = {make_location(vs)};
+			lookup.interned_name = std::any_cast<interned_string>(vs[0]);
 			return AST::make_node(ast, lookup);
 		}
 		default:
@@ -584,7 +657,7 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 	};
 
 	parser["list_literal"] = [&ast](const peg::SemanticValues &vs) {
-		AST::list_literal out;
+		AST::list_literal out = {make_location(vs)};
 		for(auto& elem: vs)
 			out.elements.push_back(AST::a2r(elem));
 		return AST::make_node(ast, out);
@@ -593,7 +666,7 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 	parser["literal"] = [&ast](const peg::SemanticValues &vs) {
 		switch (vs.choice()) {
 		case 0: // None
-			return AST::make_node(ast, AST::none{});
+			return AST::make_node(ast, AST::none{make_location(vs)});
 		case 1: // True
 			return AST::make_node(ast, true);
 		case 2: // False

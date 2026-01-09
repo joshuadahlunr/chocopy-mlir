@@ -5,20 +5,21 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
 
 namespace AST {
 
 	struct pretty_printer : public visiter<std::string> {
-		AST::flattened &ast;
+		std::unordered_set<ref> visited;
 		size_t indent = -2;
 		bool name_only = false;
 
-		explicit pretty_printer(AST::flattened &ast) : ast(ast) {}
+		using visiter<std::string>::visiter;
 
-		std::string gen_indent(size_t level) { 
+		std::string gen_indent(size_t level) {
 			constexpr size_t min = -2;
 			if(level > min) level = 0;
-			return std::string(level, '\t'); 
+			return std::string(level, '\t');
 		}
 
 		template<typename Tfunction>
@@ -29,91 +30,110 @@ namespace AST {
 			return out;
 		}
 
-		std::string visit(ref ref) {
-			return visiter<std::string>::visit(ast[ref], ref);
+		void check_cycle(ref r) {
+			if(visited.contains(r))
+				throw std::runtime_error("Tree cycle detected!");
+			visited.insert(r);
 		}
 
 
 
-		std::string visit_ref(const ref&, ref) override { return "<invalid>"; }
+		std::string visit_ref(ref&, ref) override { return "<invalid>"; }
 
-		std::string visit_type_lookup(const type_lookup& type, ref) override {
+		std::string visit_type_lookup(type_lookup& type, ref r) override {
+			check_cycle(r);
 			return "lookup(" + std::string(type.interned_name) + ")";
 		}
 
-		std::string visit_list_type(const list_type& type, ref) override {
+		std::string visit_list_type(list_type& type, ref r) override {
+			check_cycle(r);
 			return "[" + visit(type.type) + "]";
 		}
 
-		std::string visit_class_declaration_lookup(const class_declaration_lookup& decl, ref r) override {
+		std::string visit_class_declaration_lookup(class_declaration_lookup& decl, ref r) override {
+			check_cycle(r);
 			return "class " + std::string(decl.name) + "(lookup(" + std::string(decl.base) + ")):\n"
 				+ visit_block(decl, r);
 		}
 
-		std::string visit_class_declaration(const class_declaration& decl, ref r) override {
+		std::string visit_class_declaration(class_declaration& decl, ref r) override {
 			if(name_only) return std::string(decl.name);
 
+			check_cycle(r);
 			std::string base = "<ABSENT>";
 			if(decl.base != AST::absent)
-				base = ast[decl.base].as_class_declaration().name; 
+				base = ast[decl.base].as_class_declaration().name;
 			return "class " + std::string(decl.name) + "(" + base + "):\n"
 				+ visit_block(decl, r);
 		}
 
-		std::string visit_function_declaration(const function_declaration& decl, ref r) override {
+		std::string visit_function_declaration(function_declaration& decl, ref r) override {
+			if(name_only) return std::string(decl.name);
+
+			check_cycle(r);
 			std::string out = "def " + std::string(decl.name) + "(";
 			if(decl.num_parameters) out += "params";
 			out += "):\n" + visit_block(decl, r);
 			return out;
 		}
 
-		std::string visit_parameter_declaration(const parameter_declaration& decl, ref) override {
+		std::string visit_parameter_declaration(parameter_declaration& decl, ref r) override {
+			check_cycle(r);
 			return name_only_block([&, this]{
 				return "param(" + std::to_string(decl.index) + ", " + std::string(decl.name) + "): " + visit(decl.type);
 			});
 		}
 
-		std::string visit_variable_declaration(const variable_declaration& decl, ref) override {
+		std::string visit_variable_declaration(variable_declaration& decl, ref r) override {
+			check_cycle(r);
 			return name_only_block([&, this]{
 				return std::string(decl.name) + ": " + visit(decl.type) + " = " + visit(decl.initial_value);
 			});
 		}
 
-		std::string visit_global_lookup(const global_lookup& decl, ref) override {
+		std::string visit_global_lookup(global_lookup& decl, ref r) override {
+			check_cycle(r);
 			return "global lookup(" + std::string(decl.interned_name) + ")";
 		}
 
-		std::string visit_global(const global& decl, ref) override {
+		std::string visit_global(global& decl, ref r) override {
+			check_cycle(r);
 			// return "global lookup(" + std::string(decl.interned_name) + ")";
 			throw std::runtime_error("Not implemented yet!");
 		}
 
-		std::string visit_nonlocal_lookup(const nonlocal_lookup& decl, ref) override {
+		std::string visit_nonlocal_lookup(nonlocal_lookup& decl, ref r) override {
+			check_cycle(r);
 			return "nonlocal lookup(" + std::string(decl.interned_name) + ")";
 		}
 
-		std::string visit_nonlocal(const nonlocal& decl, ref) override {
+		std::string visit_nonlocal(nonlocal& decl, ref r) override {
+			check_cycle(r);
 			// return "nonlocal lookup(" + std::string(decl.interned_name) + ")";
 			throw std::runtime_error("Not implemented yet!");
 		}
 
-		std::string visit_pass_statement(const pass_statement &, ref) override {
+		std::string visit_pass_statement(pass_statement &, ref r) override {
+			check_cycle(r);
 			return "pass";
 		}
 
-		std::string visit_return_statement(const return_statement& stmt, ref) override {
+		std::string visit_return_statement(return_statement& stmt, ref r) override {
+			check_cycle(r);
 			return "return " + visit(stmt.what);
 		}
 
-		std::string visit_assignment(const assignment& expr, ref) override {
+		std::string visit_assignment(assignment& expr, ref r) override {
+			check_cycle(r);
 			return visit(expr.lhs) + " = " + visit(expr.rhs);
 		}
 
-		std::string visit_if_statement(const if_statement& stmt, ref r) override {
+		std::string visit_if_statement(if_statement& stmt, ref r) override {
+			check_cycle(r);
 			auto& first = stmt.condition_block_pairs.front();
 			std::span elifs = stmt.condition_block_pairs;
 			bool else_present = false;
-			if(elifs.back().condition == AST::absent) 
+			if(elifs.back().condition == AST::absent)
 				elifs = elifs.subspan(1, elifs.size() - 2), else_present = true;
 			else elifs = elifs.subspan(1);
 
@@ -122,162 +142,195 @@ namespace AST {
 			for(auto& elif: elifs)
 				out += gen_indent(indent) + "if " + visit(elif.condition) + ":\n"
 					+ visit_block(elif.block, r);
-			if(else_present) 
+			if(else_present)
 				out += gen_indent(indent) + "else:\n"
 					+ visit_block(stmt.condition_block_pairs.back().block, r);
-			
+
 			return out;
 		}
 
-		std::string visit_while_statement(const while_statement& stmt, ref r) override {
+		std::string visit_while_statement(while_statement& stmt, ref r) override {
+			check_cycle(r);
 			return "while " + visit(stmt.condition) + ":\n"
 				+ visit_block(stmt, r);
 		}
 
-		std::string visit_for_statement(const for_statement& stmt, ref r) override {
+		std::string visit_for_statement(for_statement& stmt, ref r) override {
+			check_cycle(r);
 			return "for " + std::string(stmt.iterator) + " in " + visit(stmt.source) + ":\n"
 				+ visit_block(stmt, r);
 		}
 
-		std::string visit_block(const block &block, ref) override {
+		std::string visit_block(block &block, ref r) override {
+			// check_cycle(r); // Function gets reused so should often trigger!
 			++indent;
 			std::string out;
 			for (auto &elem : block.elements)
-			out += gen_indent(indent) + visit(elem) + "\n";
+				out += gen_indent(indent) + visit(elem) + "\n";
 			--indent;
 			return out;
 		}
 
-		std::string visit_if_expression(const if_expression& expr, ref) override {
+		std::string visit_if_expression(if_expression& expr, ref r) override {
+			check_cycle(r);
 			return "(" + visit(expr.then) + " if " + visit(expr.condition) + " else " + visit(expr.else_) + ")";
 		}
 
-		std::string visit_logical_and(const logical_and& expr, ref) override {
+		std::string visit_logical_and(logical_and& expr, ref r) override {
+			check_cycle(r);
 			return "(" + visit(expr.lhs) + " and " + visit(expr.rhs) + ")";
 		}
 
-		std::string visit_logical_or(const logical_or& expr, ref) override {
+		std::string visit_logical_or(logical_or& expr, ref r) override {
+			check_cycle(r);
 			return "(" + visit(expr.lhs) + " or " + visit(expr.rhs) + ")";
 		}
 
-		std::string visit_equal(const equal& expr, ref) override {
+		std::string visit_equal(equal& expr, ref r) override {
+			check_cycle(r);
 			return "(" + visit(expr.lhs) + " == " + visit(expr.rhs) + ")";
 		}
 
-		std::string visit_not_equal(const not_equal& expr, ref) override {
+		std::string visit_not_equal(not_equal& expr, ref r) override {
+			check_cycle(r);
 			return "(" + visit(expr.lhs) + " != " + visit(expr.rhs) + ")";
 		}
 
-		std::string visit_less(const less& expr, ref) override {
+		std::string visit_less(less& expr, ref r) override {
+			check_cycle(r);
 			return "(" + visit(expr.lhs) + " < " + visit(expr.rhs) + ")";
 		}
 
-		std::string visit_less_equal(const less_equal& expr, ref) override {
+		std::string visit_less_equal(less_equal& expr, ref r) override {
+			check_cycle(r);
 			return "(" + visit(expr.lhs) + " <= " + visit(expr.rhs) + ")";
 		}
 
-		std::string visit_greater(const greater& expr, ref) override {
+		std::string visit_greater(greater& expr, ref r) override {
+			check_cycle(r);
 			return "(" + visit(expr.lhs) + " > " + visit(expr.rhs) + ")";
 		}
 
-		std::string visit_greater_equal(const greater_equal& expr, ref) override {
+		std::string visit_greater_equal(greater_equal& expr, ref r) override {
+			check_cycle(r);
 			return "(" + visit(expr.lhs) + " >= " + visit(expr.rhs) + ")";
 		}
 
-		std::string visit_is(const is& expr, ref) override {
+		std::string visit_is(is& expr, ref r) override {
+			check_cycle(r);
 			return "(" + visit(expr.lhs) + " is " + visit(expr.rhs) + ")";
 		}
 
-		std::string visit_add(const add& expr, ref) override {
+		std::string visit_add(add& expr, ref r) override {
+			check_cycle(r);
 			return "(" + visit(expr.lhs) + " + " + visit(expr.rhs) + ")";
 		}
 
-		std::string visit_subtract(const subtract& expr, ref) override {
+		std::string visit_subtract(subtract& expr, ref r) override {
+			check_cycle(r);
 			return "(" + visit(expr.lhs) + " - " + visit(expr.rhs) + ")";
 		}
 
-		std::string visit_multiply(const multiply& expr, ref) override {
+		std::string visit_multiply(multiply& expr, ref r) override {
+			check_cycle(r);
 			return "(" + visit(expr.lhs) + " * " + visit(expr.rhs) + ")";
 		}
 
-		std::string visit_quotient(const quotient& expr, ref) override {
+		std::string visit_quotient(quotient& expr, ref r) override {
+			check_cycle(r);
 			return "(" + visit(expr.lhs) + " // " + visit(expr.rhs) + ")";
 		}
 
-		std::string visit_remainder(const remainder& expr, ref) override {
+		std::string visit_remainder(remainder& expr, ref r) override {
+			check_cycle(r);
 			return "(" + visit(expr.lhs) + " % " + visit(expr.rhs) + ")";
 		}
 
-		std::string visit_divide(const divide& expr, ref) override {
+		std::string visit_divide(divide& expr, ref r) override {
+			check_cycle(r);
 			return "(" + visit(expr.lhs) + " / " + visit(expr.rhs) + ")";
 		}
 
-		std::string visit_logical_not(const logical_not& expr, ref) override {
+		std::string visit_logical_not(logical_not& expr, ref r) override {
+			check_cycle(r);
 			return "(not" + visit(expr.what) + ")";
 		}
 
-		std::string visit_negate(const negate& expr, ref) override {
+		std::string visit_negate(negate& expr, ref r) override {
+			check_cycle(r);
 			return "(-" + visit(expr.what) + ")";
 		}
 
-		std::string visit_variable_load_lookup(const variable_load_lookup& expr, ref) override {
-			return "lookup(" + std::string(expr.interned_name) + ")";
-		}	
-
-		std::string visit_variable_load(const variable_load& expr, ref) override {
-			// return "lookup(" + std::string(expr.interned_name) + ")";
-			throw std::runtime_error("Not implemented yet!");
-		}	
-
-		std::string visit_variable_store_lookup(const variable_store_lookup& expr, ref) override {
+		std::string visit_variable_load_lookup(variable_load_lookup& expr, ref r) override {
+			check_cycle(r);
 			return "lookup(" + std::string(expr.interned_name) + ")";
 		}
 
-		std::string visit_variable_store(const variable_store& expr, ref) override {
+		std::string visit_variable_load(variable_load& expr, ref r) override {
+			check_cycle(r);
 			// return "lookup(" + std::string(expr.interned_name) + ")";
 			throw std::runtime_error("Not implemented yet!");
 		}
 
-		std::string visit_member_access_lookup(const member_access_lookup& expr, ref) override {
-			return visit(expr.lhs) + ".lookup(" + std::string(expr.interned_name) + ")"; 
+		std::string visit_variable_store_lookup(variable_store_lookup& expr, ref) override {
+			return "lookup(" + std::string(expr.interned_name) + ")";
 		}
 
-		std::string visit_member_access(const member_access& expr, ref) override {
-			// return visit(expr.lhs) + ".lookup(" + std::string(expr.interned_name) + ")"; 
+		std::string visit_variable_store(variable_store& expr, ref r) override {
+			check_cycle(r);
+			// return "lookup(" + std::string(expr.interned_name) + ")";
 			throw std::runtime_error("Not implemented yet!");
 		}
 
-		std::string visit_array_index(const array_index& expr, ref) override {
+		std::string visit_member_access_lookup(member_access_lookup& expr, ref r) override {
+			check_cycle(r);
+			return visit(expr.lhs) + ".lookup(" + std::string(expr.interned_name) + ")";
+		}
+
+		std::string visit_member_access(member_access& expr, ref r) override {
+			check_cycle(r);
+			// return visit(expr.lhs) + ".lookup(" + std::string(expr.interned_name) + ")";
+			throw std::runtime_error("Not implemented yet!");
+		}
+
+		std::string visit_array_index(array_index& expr, ref r) override {
+			check_cycle(r);
 			return visit(expr.lhs) + "[" + visit(expr.rhs) + "]";
 		}
 
-		std::string visit_call(const call& expr, ref) override {
+		std::string visit_call(call& expr, ref r) override {
+			check_cycle(r);
 			std::string out = visit(expr.lhs) + "(";
 			for(auto arg: expr.elements)
 				out += visit(arg) + ", ";
 			return out += ")";
 		}
 
-		std::string visit_double(const double& value, ref) override {
+		std::string visit_double(double& value, ref r) override {
+			check_cycle(r);
 			std::ostringstream tmp;
 			tmp << value;
 			return tmp.str();
 		}
 
-		std::string visit_interned_string(const interned_string& value, ref) override {
+		std::string visit_interned_string(interned_string& value, ref r) override {
+			check_cycle(r);
 			return '"' + std::string(value) + '"';
 		}
 
-		std::string visit_bool(const bool& value, ref) override {
+		std::string visit_bool(bool& value, ref r) override {
+			check_cycle(r);
 			if(value) return "True";
 			else return "False";
 		}
 
-		std::string visit_none(const none&, ref) override {
+		std::string visit_none(none&, ref r) override {
+			// check_cycle(r); // Nones get reused in global namespace!
 			return "None";
 		}
 
-		std::string visit_list_literal(const list_literal& lit, ref) override {
+		std::string visit_list_literal(list_literal& lit, ref r) override {
+			check_cycle(r);
 			std::string out = "[";
 			for(auto elem: lit.elements)
 				out += visit(elem) + ", ";
