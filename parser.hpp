@@ -121,111 +121,136 @@ inline std::string preprocess_indentation(const std::string& src) {
 inline std::tuple<AST::flattened, string_interner, AST::ref> initialize_builtin_block() {
 	AST::flattened ast;
 	string_interner interner;
-	AST::node_base internal {{0, 0, interner.intern("<builtin>")}};
-	AST::block block = {internal};
-	auto builtin_block = AST::make_node(ast, std::move(block));
-	AST::ref __4bytes__, object_ref, global_none;
+	AST::node_base builtin {{0, 0, interner.intern("<builtin>")}, AST::absent};
+	AST::block block = {builtin};
+	builtin.scope_block = AST::make_node(ast, std::move(block));
+	AST::ref __4bytes__, object_ref, global_none, int_ref;
+	AST::ref zero = AST::make_node(ast, AST::int_literal{builtin, 0});
 	{
-		AST::class_declaration i32 = {internal};
+		AST::class_declaration i32 = {builtin};
 		i32.name = interner.intern("__4bytes__");
 		i32.base = AST::absent;
 		i32.size = 32;
 		i32.alignment = 32;
-		i32.elements.push_back(AST::make_node(ast, AST::pass_statement{}));
+		i32.elements.push_back(AST::make_node(ast, AST::pass_statement{builtin}));
 		block.elements.push_back(__4bytes__ = AST::make_node(ast, i32));
 	}
 	{
-		AST::class_declaration object = {internal};
+		AST::class_declaration object = {builtin};
 		object.name = interner.intern("object");
 		object.base = AST::absent;
 		object.size = 32 * 3;
 		object.alignment = 32;
 		object.elements = {
 			AST::make_node(ast, AST::variable_declaration{
-				internal, interner.intern("__tag__"),
-				__4bytes__, global_none = AST::make_node(ast, AST::none{})
+				builtin, interner.intern("__tag__"),
+				__4bytes__, global_none = AST::make_node(ast, AST::none_literal{})
 			}), AST::make_node(ast, AST::variable_declaration{
-				internal, interner.intern("__size__"),
+				builtin, interner.intern("__size__"),
 				__4bytes__, global_none
 			}), AST::make_node(ast, AST::variable_declaration{
-				internal, interner.intern("__vtable__"),
+				builtin, interner.intern("__vtable__"),
 				__4bytes__, global_none
 			})
 		};
 		block.elements.push_back(object_ref = AST::make_node(ast, object));
 	}
 	{
-		AST::class_declaration Int = {internal};
+		AST::class_declaration Int = {builtin};
 		Int.name = interner.intern("int");
 		Int.base = object_ref;
 		Int.size = 32 * (3 + 1);
 		Int.alignment = 32;
 		Int.elements = {
 			AST::make_node(ast, AST::variable_declaration{
-				internal, interner.intern("__int__"),
-				__4bytes__, AST::make_node(ast, double(0))
+				builtin, interner.intern("__int__"),
+				__4bytes__, zero
 			})
 		};
 		block.elements.push_back(AST::make_node(ast, Int));
 	}
 	{
-		AST::class_declaration Int = {internal};
+		AST::class_declaration Int = {builtin};
 		Int.name = interner.intern("float");
 		Int.base = object_ref;
 		Int.size = 32 * (3 + 1);
 		Int.alignment = 32;
 		Int.elements = {
 			AST::make_node(ast, AST::variable_declaration{
-				internal, interner.intern("__float__"),
-				__4bytes__, AST::make_node(ast, double(0))
+				builtin, interner.intern("__float__"),
+				__4bytes__, zero
 			})
 		};
-		block.elements.push_back(AST::make_node(ast, Int));
+		block.elements.push_back(
+			int_ref = ast[zero].as_int_literal().type = AST::make_node(ast, Int)
+		);
 	}
 	{
-		AST::class_declaration Bool = {internal};
+		AST::class_declaration Bool = {builtin};
 		Bool.name = interner.intern("bool");
 		Bool.base = object_ref;
 		Bool.size = 32 * (3 + 1);
 		Bool.alignment = 32;
 		Bool.elements = {
 			AST::make_node(ast, AST::variable_declaration{
-				internal, interner.intern("__bool__"),
-				__4bytes__, AST::make_node(ast, double(0))
+				builtin, interner.intern("__bool__"),
+				__4bytes__, zero
 			})
 		};
 		block.elements.push_back(AST::make_node(ast, Bool));
 	}
 	{
-		AST::class_declaration str = {internal};
+		AST::class_declaration str = {builtin};
 		str.name = interner.intern("str");
 		str.base = object_ref;
 		str.size = 32 * (3 + 1);
 		str.alignment = 32;
 		str.elements = {
 			AST::make_node(ast, AST::variable_declaration{
-				internal, interner.intern("__len__"),
-				__4bytes__, AST::make_node(ast, double(0))
+				builtin, interner.intern("__len__"),
+				__4bytes__, zero
 			})
 		};
 		block.elements.push_back(AST::make_node(ast, str));
 	}
 	{
-		AST::class_declaration list = {internal};
+		AST::class_declaration list = {builtin};
 		list.name = interner.intern("list");
 		list.base = object_ref;
 		list.size = 32 * (3 + 1);
 		list.alignment = 32;
 		list.elements = {
 			AST::make_node(ast, AST::variable_declaration{
-				internal, interner.intern("__len__"),
-				__4bytes__, AST::make_node(ast, double(0))
+				builtin, interner.intern("__len__"),
+				__4bytes__, zero
 			})
 		};
 		block.elements.push_back(AST::make_node(ast, list));
 	}
-	ast[builtin_block].as_block() = std::move(block);
-	return {std::move(ast), std::move(interner), builtin_block};
+
+	// Function Declarations
+	{
+		AST::function_declaration print = {builtin};
+		print.name = interner.intern("print");
+		print.num_parameters = 1;
+		print.return_type = int_ref;
+		print.elements = {
+			AST::make_node(ast, AST::pass_statement{builtin})
+		};
+		block.elements.push_back(AST::make_node(ast, print));
+	}
+	{
+		AST::function_declaration len = {builtin};
+		len.name = interner.intern("len");
+		len.num_parameters = 1;
+		len.return_type = int_ref;
+		len.elements = {
+			AST::make_node(ast, AST::pass_statement{builtin})
+		};
+		block.elements.push_back(AST::make_node(ast, len));
+	}
+	ast[builtin.scope_block].as_block() = std::move(block);
+	return {std::move(ast), std::move(interner), builtin.scope_block};
 }
 
 inline peg::parser initialize_parser(AST::flattened& ast, string_interner& interner){
@@ -259,8 +284,6 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 		return out;
 	};
 
-	constexpr static auto no_type = AST::absent;
-
 	parser["program"] = [&ast](const peg::SemanticValues &vs) {
 		AST::block out = {{make_location(vs)}};
 		for(auto& stmt: vs)
@@ -277,7 +300,7 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 	};
 
 	parser["class_body"] = [&ast](const peg::SemanticValues &vs) {
-		AST::block out = {{make_location(vs)}};
+		AST::block out = {{make_location(vs), AST::absent}};
 		if(vs.choice() == 0) { // 'pass' NEWLINE
 			out.elements.push_back(AST::make_node(ast, AST::pass_statement{}));
 			return out;
@@ -315,9 +338,8 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 			func.num_parameters = params->size();
 			for(size_t i = func.num_parameters; i--; )
 				func.elements.insert(func.elements.begin(), AST::make_node(ast, AST::parameter_declaration{
-					.name = (*params)[i].first,
-					.type = (*params)[i].second,
-					.index = i
+					{make_location(vs), AST::absent}, 
+					(*params)[i].first, (*params)[i].second, i
 				}));
 		}
 		
@@ -325,7 +347,7 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 	};
 
 	parser["func_body"] = [&ast](const peg::SemanticValues &vs) {
-		AST::block out = {{make_location(vs)}};
+		AST::block out = {{make_location(vs), AST::absent}};
 		for(auto& stmt: vs)
 			out.elements.push_back(AST::a2r(stmt));
 		return out;
@@ -342,19 +364,19 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 		auto [name, type] = std::any_cast<std::pair<interned_string, AST::ref>>(vs[0]);
 		auto initial_value = AST::a2r(vs[1]);
 		return AST::make_node(ast, AST::variable_declaration{
-			make_location(vs), name, type, initial_value
+			make_location(vs), AST::absent, name, type, initial_value
 		});
 	};
 
 	parser["global_decl"] = [&ast](const peg::SemanticValues &vs) {
 		return AST::make_node(ast, AST::global_lookup{
-			make_location(vs), std::any_cast<interned_string>(vs[0])
+			make_location(vs), AST::absent, std::any_cast<interned_string>(vs[0])
 		});
 	};
 
 	parser["nonlocal_decl"] = [&ast](const peg::SemanticValues &vs) {
 		return AST::make_node(ast, AST::nonlocal_lookup{
-			make_location(vs), std::any_cast<interned_string>(vs[0])
+			make_location(vs), AST::absent, std::any_cast<interned_string>(vs[0])
 		});
 	};
 
@@ -365,15 +387,15 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 	parser["type"] = [&ast, identifier_parser = std::move(identifier_parser)](const peg::SemanticValues &vs) {
 		switch(vs.choice()) {
 		case 0: // IDENT
-			return AST::make_node(ast, AST::type_lookup{make_location(vs), std::any_cast<interned_string>(vs[0])});
+			return AST::make_node(ast, AST::type_lookup{make_location(vs), AST::absent, std::any_cast<interned_string>(vs[0])});
 		case 1: { // STRING # NOTE: Required to be a valid IDENT!
 			auto raw = std::any_cast<interned_string>(vs[0]);
 			if(!identifier_parser.parse(raw))
 				return AST::make_error(ast, diagnostics::singleton().push_error("Type strings should be proper identifiers!", vs.ss, make_location(vs)));
-			return AST::make_node(ast, AST::type_lookup{make_location(vs), raw});
+			return AST::make_node(ast, AST::type_lookup{make_location(vs), AST::absent, raw});
 		}
 		case 2: // '[' type ']'
-			return AST::make_node(ast, AST::list_type{make_location(vs), AST::a2r(vs[0])});
+			return AST::make_node(ast, AST::list_type{make_location(vs), AST::absent, AST::a2r(vs[0])});
 		default: throw std::runtime_error("type unreachable");
 		}
 	};
@@ -381,13 +403,13 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 	parser["simple_stmt"] = [&ast](const peg::SemanticValues &vs) {
 		switch (vs.choice()) {
 		case 0: // 'pass'
-			return AST::make_node(ast, AST::pass_statement{make_location(vs)});
+			return AST::make_node(ast, AST::pass_statement{make_location(vs), AST::absent});
 		case 1: // 'return' expr?
-			return AST::make_node(ast, AST::return_statement{make_location(vs), vs.size() ? AST::a2r(vs[0]) : AST::absent});
+			return AST::make_node(ast, AST::return_statement{make_location(vs), AST::absent, vs.size() ? AST::a2r(vs[0]) : AST::absent});
 		case 2:{ // (target '=')* expr
 			auto lhs = AST::a2r(vs[0]);
 			for(size_t i = 1; i < vs.size(); ++i) {
-				AST::assignment expr = {make_location(vs)};
+				AST::assignment expr = {make_location(vs), AST::absent};
 				expr.lhs = lhs; expr.rhs = AST::a2r(vs[i]);
 				lhs = AST::make_node(ast, expr);
 			}
@@ -399,7 +421,7 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 
 	parser["target"] = [&ast](const peg::SemanticValues &vs) {
 		auto lookup = std::any_cast<interned_string>(vs[0]);
-		auto lhs = AST::make_node(ast, AST::variable_store_lookup{{make_location(vs)}, lookup});
+		auto lhs = AST::make_node(ast, AST::variable_store_lookup{{make_location(vs), AST::absent}, lookup});
 		for(size_t i = 1; i < vs.size(); ++i)
 			if(vs[i].type() == typeid(AST::array_index)) {
 				auto index = std::any_cast<AST::array_index>(vs[i]);
@@ -431,16 +453,21 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 	};
 
 	parser["for_stmt"] = [&ast](const peg::SemanticValues &vs) {
-		AST::for_statement stmt = {make_location(vs), std::any_cast<AST::block>(vs[2])};
-		stmt.iterator = std::any_cast<interned_string>(vs[0]);
+		AST::for_statement stmt = {make_location(vs), AST::absent, std::any_cast<AST::block>(vs[2])};
 		stmt.source = AST::a2r(vs[1]);
+		stmt.elements.insert(stmt.elements.begin(), AST::make_node(ast, AST::parameter_declaration{
+			{make_location(vs)},
+			std::any_cast<interned_string>(vs[0]),
+			AST::absent, 0
+		}));
 		return AST::make_node(ast, stmt);
 	};
 
 	parser["while_stmt"] = [&ast](const peg::SemanticValues &vs) {
-		AST::while_statement stmt = {make_location(vs), std::any_cast<AST::block>(vs[1])};
+		AST::while_statement stmt = {make_location(vs), AST::absent, std::any_cast<AST::block>(vs[1])};
 		stmt.condition = AST::a2r(vs[0]);
-		return AST::make_node(ast, stmt);
+		auto ref = AST::make_node(ast, stmt);
+		return ref;
 	};
 
 	parser["block"] = [&ast](const peg::SemanticValues &vs) {
@@ -666,13 +693,13 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 	parser["literal"] = [&ast](const peg::SemanticValues &vs) {
 		switch (vs.choice()) {
 		case 0: // None
-			return AST::make_node(ast, AST::none{make_location(vs)});
+			return AST::make_node(ast, AST::none_literal{make_location(vs)});
 		case 1: // True
-			return AST::make_node(ast, true);
+			return AST::make_node(ast, AST::bool_literal{make_location(vs), AST::absent, AST::absent, true});
 		case 2: // False
-			return AST::make_node(ast, false);
+			return AST::make_node(ast, AST::bool_literal{make_location(vs), AST::absent, AST::absent, false});
 		case 5: // String
-			return AST::make_node(ast, std::any_cast<interned_string>(vs[0]));
+			return AST::make_node(ast, AST::string_literal{make_location(vs), AST::absent, AST::absent, std::any_cast<interned_string>(vs[0])});
 		default:
 			return AST::a2r(vs[0]);
 		}
@@ -687,10 +714,14 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 	};
 
 	parser["FLOAT"] = [&ast](const peg::SemanticValues &vs) {
-		return AST::make_node(ast, vs.token_to_number<double>());
+		AST::float_literal lit = {make_location(vs)};
+		lit.value = vs.token_to_number<double>();
+		return AST::make_node(ast, lit);
 	};
 	parser["INTEGER"] = [&ast](const peg::SemanticValues &vs) {
-		return AST::make_node(ast, vs.token_to_number<double>());
+		AST::int_literal lit = {make_location(vs)};
+		lit.value = vs.token_to_number<int64_t>();
+		return AST::make_node(ast, lit);
 	};
 
     return std::move(parser);

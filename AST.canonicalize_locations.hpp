@@ -42,7 +42,7 @@ namespace AST {
 
 		void visit_parameter_declaration(parameter_declaration& value, ref) override {
 			value.location.pointers_to_bytes(source);
-			visit(value.type);
+			if(value.type != absent) visit(value.type);
 		}
 
 		void visit_variable_declaration(variable_declaration& value, ref) override {
@@ -56,8 +56,8 @@ namespace AST {
 		}
 
 		void visit_global(global& value, ref) override {
-			// return "global lookup(" + std::string(decl.interned_name) + ")";
-			throw std::runtime_error("Not implemented yet!");
+			value.location.pointers_to_bytes(source);
+			// visit(value.reference); // Causes cycle!
 		}
 
 		void visit_nonlocal_lookup(nonlocal_lookup& value, ref) override {
@@ -65,8 +65,8 @@ namespace AST {
 		}
 
 		void visit_nonlocal(nonlocal& value, ref) override {
-			// return "nonlocal lookup(" + std::string(decl.interned_name) + ")";
-			throw std::runtime_error("Not implemented yet!");
+			value.location.pointers_to_bytes(source);
+			// visit(value.reference); // Causes cycle!
 		}
 
 		void visit_pass_statement(pass_statement& value, ref) override {
@@ -104,10 +104,12 @@ namespace AST {
 			visit_block(value, r);
 		}
 
-		void visit_block(block& value, ref) override {
+		void visit_block(block& value, ref r) override {
 			value.location.pointers_to_bytes(source);
-			for (auto &elem : value.elements)
+			for (auto &elem : value.elements) {
 				visit(elem);
+				ast[elem].as_node_base().scope_block = r;
+			}
 		}
 
 		void visit_if_expression(if_expression& value, ref) override {
@@ -221,18 +223,18 @@ namespace AST {
 			value.location.pointers_to_bytes(source);
 		}	
 
-		void visit_variable_load(variable_load& expr, ref) override {
-			// return "lookup(" + std::string(expr.interned_name) + ")";
-			throw std::runtime_error("Not implemented yet!");
+		void visit_variable_load(variable_load& value, ref) override {
+			value.location.pointers_to_bytes(source);
+			// visit(value.reference); // creates cycle
 		}	
 
 		void visit_variable_store_lookup(variable_store_lookup& value, ref) override {
 			value.location.pointers_to_bytes(source);
 		}
 
-		void visit_variable_store(variable_store& expr, ref) override {
-			// return "lookup(" + std::string(expr.interned_name) + ")";
-			throw std::runtime_error("Not implemented yet!");
+		void visit_variable_store(variable_store& value, ref) override {
+			value.location.pointers_to_bytes(source);
+			// visit(value.reference); // creates cycle
 		}
 
 		void visit_member_access_lookup(member_access_lookup& value, ref) override {
@@ -240,9 +242,10 @@ namespace AST {
 			visit(value.lhs);
 		}
 
-		void visit_member_access(member_access& expr, ref) override {
-			// return visit(expr.lhs) + ".lookup(" + std::string(expr.interned_name) + ")"; 
-			throw std::runtime_error("Not implemented yet!");
+		void visit_member_access(member_access& value, ref) override {
+			value.location.pointers_to_bytes(source);
+			visit(value.lhs);
+			// visit(value.reference); // creates cycle
 		}
 
 		void visit_array_index(array_index& value, ref) override {
@@ -258,13 +261,25 @@ namespace AST {
 				visit(arg);
 		}
 
-		void visit_double(double&, ref) override {}
+		void visit_float_literal(float_literal& value, ref) override {
+			value.location.pointers_to_bytes(source);
+		}
 
-		void visit_interned_string(interned_string&, ref) override {}
+		void visit_int_literal(int_literal& value, ref) override {
+			value.location.pointers_to_bytes(source);
+		}
 
-		void visit_bool(bool&, ref) override {}
+		void visit_string_literal(string_literal& value, ref) override {
+			value.location.pointers_to_bytes(source);
+		}
 
-		void visit_none(none&, ref) override {}
+		void visit_bool_literal(bool_literal& value, ref) override {
+			value.location.pointers_to_bytes(source);
+		}
+
+		void visit_none_literal(none_literal& value, ref) override {
+			value.location.pointers_to_bytes(source);
+		}
 
 		void visit_list_literal(list_literal& value, ref) override {
 			value.location.pointers_to_bytes(source);

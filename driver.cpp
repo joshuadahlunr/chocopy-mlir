@@ -1,10 +1,11 @@
 
 #include <iostream>
 
-#include "AST.hpp"
 #include "AST.print.hpp" // Print pass
 #include "AST.canonicalize_locations.hpp" // Update locaions to not be pointers but proper bytes
 #include "parser.hpp"
+
+#include "sema.lookup.hpp" // Convert lookup AST nodes to references
 
 int main(void) {
 	std::string test = R"~(# A resizable list of integers
@@ -50,15 +51,12 @@ class DoublingVector(Vector):
 
 vec:Vector = None
 num:float = 0.
-i:int = 0
 
 # Create a vector and populate it with The Numbers
 vec = DoublingVector()
-nums = [4, 8, 15, 16, 23, 42]
-while i < len(nums):
-    vec.append(nums[i])
+for num in [4, 8, 15, 16, 23, 42]:
+    vec.append(num)
     print(vec.capacity())
-    i = i + 1
 
 )~";
 	// std::string test = "class x(object):\n\tdef add(a: int, b: int):\n\t\tpass\nif True:\n\tz = x.y()[5] % 5 if X > Y else [5, 5.6, 'h', True, False, None]";
@@ -72,8 +70,11 @@ while i < len(nums):
 	parser.parse(source, root, interner.intern("<generated>").data());
 	AST::canonicalize_locations{ast, source}.visit(root);
 	ast[builtin_block].as_block().elements.push_back(root);
-
+	ast[root].as_node_base().scope_block = builtin_block;
 	if(!diagnostics::singleton().print()) return -1;
+
+	sema::resolve_lookups{ast, source}.visit(0);
+	if(!diagnostics::singleton().print()) return -2;
 
 	std::string reconstructed = AST::pretty_printer(ast).visit(builtin_block);
 	std::cout << reconstructed << std::endl;

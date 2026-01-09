@@ -1,12 +1,14 @@
 #pragma once
 
 #include <any>
+#include <cassert>
 #include <cstddef>
 #include <stdexcept>
 #include <variant>
 #include <vector>
 
 #include "diagnostics.hpp"
+#include "string_helpers.hpp"
 
 namespace AST {
 	namespace detail {
@@ -39,6 +41,7 @@ namespace AST {
 
 	struct node_base {
 		diagnostics::source_location location;
+		ref scope_block = absent;
 	};
 
 	struct error : public node_base {};
@@ -121,7 +124,7 @@ namespace AST {
 		ref condition;
 	};
 	struct for_statement: public block {
-		interned_string iterator; 
+		// interned_string iterator; // The iterator is now attached as a parameter_decl in the block
 		ref source;
 	};
 
@@ -181,8 +184,19 @@ namespace AST {
 		ref lhs;
 	};
 
-
-	struct none : public expression {}; // None literal
+	struct bool_literal : public expression {
+		bool value;
+	};
+	struct string_literal : public expression {
+		interned_string value;
+	};
+	struct int_literal : public expression {
+		int64_t value;
+	};
+	struct float_literal : public expression {
+		double value;
+	};
+	struct none_literal : public expression {}; // None literal
 
 
 	#define NODE_TYPES_STAMPER(X) \
@@ -245,10 +259,11 @@ namespace AST {
 		X(call)\
 \
 		/* Literals */\
-		X(double)\
-		X(interned_string)\
-		X(bool)\
-		X(none)\
+		X(float_literal)\
+		X(int_literal)\
+		X(string_literal)\
+		X(bool_literal)\
+		X(none_literal)\
 		X(list_literal)
 
 	#define APPEND_COMMA(x) x ,
@@ -261,6 +276,15 @@ namespace AST {
 		const type& as_##type() const { return std::get<type>(*this); }
 
 		bool is_error() { return std::holds_alternative<error>(*this); }
+
+		node_base& as_node_base() {
+			node_base* out = nullptr;
+			std::visit([&out](auto& a) {
+				out = &(node_base&)a;
+			}, *this);
+			assert(out != nullptr);
+			return *out;
+		}
 
 		NODE_TYPES_STAMPER(IMPLEMENT_HELPERS)
 	};
@@ -301,8 +325,13 @@ namespace AST {
 
 				case detail::variant_index_v<error, node::variant>:
 					// Do nothing on errors...
-				break; default: throw std::runtime_error("Invalid node state");
+					if constexpr(std::is_same_v<Treturn, void>)
+						return;
+					else return {};
+				default:
+					throw std::runtime_error("Invalid node state");
 			}
+
 		}
 
 		Treturn visit(const ref ref) {

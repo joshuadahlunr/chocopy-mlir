@@ -5,6 +5,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 
 namespace AST {
@@ -57,12 +58,12 @@ namespace AST {
 		}
 
 		std::string visit_class_declaration(class_declaration& decl, ref r) override {
-			if(name_only) return std::string(decl.name);
+			if(name_only) return std::string(decl.name) + "->" + std::to_string(r);
 
 			check_cycle(r);
 			std::string base = "<ABSENT>";
 			if(decl.base != AST::absent)
-				base = ast[decl.base].as_class_declaration().name;
+				base = name_only_block([&]() { return visit(decl.base); });
 			return "class " + std::string(decl.name) + "(" + base + "):\n"
 				+ visit_block(decl, r);
 		}
@@ -72,19 +73,26 @@ namespace AST {
 
 			check_cycle(r);
 			std::string out = "def " + std::string(decl.name) + "(";
-			if(decl.num_parameters) out += "params";
+			if(decl.num_parameters) out += "params n=" + std::to_string(decl.num_parameters);
 			out += "):\n" + visit_block(decl, r);
 			return out;
 		}
 
 		std::string visit_parameter_declaration(parameter_declaration& decl, ref r) override {
+			if(name_only) return std::string(decl.name);
+
 			check_cycle(r);
 			return name_only_block([&, this]{
-				return "param(" + std::to_string(decl.index) + ", " + std::string(decl.name) + "): " + visit(decl.type);
+				std::string out = "param(" + std::to_string(decl.index) + ", " + std::string(decl.name) + "): ";
+				if(decl.type == absent) out += "<ABSENT>";
+				else out += visit(decl.type);
+				return out;
 			});
 		}
 
 		std::string visit_variable_declaration(variable_declaration& decl, ref r) override {
+			if(name_only) return std::string(decl.name);
+
 			check_cycle(r);
 			return name_only_block([&, this]{
 				return std::string(decl.name) + ": " + visit(decl.type) + " = " + visit(decl.initial_value);
@@ -92,25 +100,35 @@ namespace AST {
 		}
 
 		std::string visit_global_lookup(global_lookup& decl, ref r) override {
+			if(name_only) return std::string(decl.interned_name);
+
 			check_cycle(r);
 			return "global lookup(" + std::string(decl.interned_name) + ")";
 		}
 
 		std::string visit_global(global& decl, ref r) override {
+			if(name_only) return visit(decl.reference);
+
 			check_cycle(r);
-			// return "global lookup(" + std::string(decl.interned_name) + ")";
-			throw std::runtime_error("Not implemented yet!");
+			return "global " + name_only_block([&]() {
+				return visit(decl.reference);
+			});
 		}
 
 		std::string visit_nonlocal_lookup(nonlocal_lookup& decl, ref r) override {
+			if(name_only) return std::string(decl.interned_name);
+
 			check_cycle(r);
 			return "nonlocal lookup(" + std::string(decl.interned_name) + ")";
 		}
 
 		std::string visit_nonlocal(nonlocal& decl, ref r) override {
+			if(name_only) return visit(decl.reference);
+
 			check_cycle(r);
-			// return "nonlocal lookup(" + std::string(decl.interned_name) + ")";
-			throw std::runtime_error("Not implemented yet!");
+			return "nonlocal " + name_only_block([&]() {
+				return visit(decl.reference);
+			});
 		}
 
 		std::string visit_pass_statement(pass_statement &, ref r) override {
@@ -157,7 +175,7 @@ namespace AST {
 
 		std::string visit_for_statement(for_statement& stmt, ref r) override {
 			check_cycle(r);
-			return "for " + std::string(stmt.iterator) + " in " + visit(stmt.source) + ":\n"
+			return "for param(0) in " + visit(stmt.source) + ":\n"
 				+ visit_block(stmt, r);
 		}
 
@@ -268,8 +286,7 @@ namespace AST {
 
 		std::string visit_variable_load(variable_load& expr, ref r) override {
 			check_cycle(r);
-			// return "lookup(" + std::string(expr.interned_name) + ")";
-			throw std::runtime_error("Not implemented yet!");
+			return name_only_block([&]() { return visit(expr.reference); });
 		}
 
 		std::string visit_variable_store_lookup(variable_store_lookup& expr, ref) override {
@@ -278,8 +295,7 @@ namespace AST {
 
 		std::string visit_variable_store(variable_store& expr, ref r) override {
 			check_cycle(r);
-			// return "lookup(" + std::string(expr.interned_name) + ")";
-			throw std::runtime_error("Not implemented yet!");
+			return name_only_block([&]() { return visit(expr.reference); });
 		}
 
 		std::string visit_member_access_lookup(member_access_lookup& expr, ref r) override {
@@ -306,26 +322,26 @@ namespace AST {
 			return out += ")";
 		}
 
-		std::string visit_double(double& value, ref r) override {
+		std::string visit_float_literal(float_literal& value, ref r) override {
 			check_cycle(r);
-			std::ostringstream tmp;
-			tmp << value;
-			return tmp.str();
+			std::ostringstream out;
+			out << value.value;
+			return out.str();
 		}
 
-		std::string visit_interned_string(interned_string& value, ref r) override {
-			check_cycle(r);
-			return '"' + std::string(value) + '"';
+		std::string visit_int_literal(int_literal& value, ref r) override {
+			return std::to_string(value.value);
 		}
 
-		std::string visit_bool(bool& value, ref r) override {
-			check_cycle(r);
-			if(value) return "True";
-			else return "False";
+		std::string visit_string_literal(string_literal& value, ref r) override {
+			return '"' + std::string(value.value) + '"';
 		}
 
-		std::string visit_none(none&, ref r) override {
-			// check_cycle(r); // Nones get reused in global namespace!
+		std::string visit_bool_literal(bool_literal& value, ref r) override {
+			return value.value ? "True" : "False";
+		}
+
+		std::string visit_none_literal(none_literal& value, ref r) override {
 			return "None";
 		}
 
