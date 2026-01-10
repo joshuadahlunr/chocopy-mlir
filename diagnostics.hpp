@@ -2,6 +2,7 @@
 #include "string_helpers.hpp"
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <iostream>
 #include <source_location>
 #include <sstream>
@@ -74,10 +75,12 @@ struct diagnostics {
 			auto line = lines[i];
 			size_t end_column = std::min<size_t>(end.column + remaining / 2, line.size() - 1);
 			size_t spacer = start.column - start_column;
+			auto length = int64_t(end.column) - int64_t(start.column);
+			if(length < 0) length = -length;
 			
 			out << type << " - " << location.filename << ":" << (start.line + 1) << ":" << (start.column + 1) << "\n"
 				<< line.substr(start_column, end_column - start_column) << "\n"
-				<< std::string(spacer, ' ') << std::string(end.column - start.column, '^') << "\n"
+				<< std::string(spacer, ' ') << std::string(length, '^') << "\n"
 				<< std::string(spacer, ' ') << hint;
 			if(i < end.line) out << "\n";
 		}

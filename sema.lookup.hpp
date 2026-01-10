@@ -1,4 +1,5 @@
 #include "AST.hpp"
+#include "AST.print.hpp"
 #include "parser.hpp"
 #include "string_helpers.hpp"
 #include <functional>
@@ -11,6 +12,14 @@ namespace sema {
 	struct resolve_lookups : public AST::visiter<AST::ref> {
 		std::string_view source;
 		bool as_type = false;
+		bool changed = false;
+
+		explicit resolve_lookups(AST::flattened &ast, std::string_view source) : visiter<AST::ref>(ast), source(source) {}
+
+		bool start(AST::ref root = 0) {
+			visit(root);
+			return changed;
+		}
 
 		template<typename Tfunction>
 		auto as_type_block(const Tfunction& func) {
@@ -53,8 +62,6 @@ namespace sema {
 				return level ? level->second : AST::absent;
 			}
 		} symbol_table;
-
-		explicit resolve_lookups(AST::flattened &ast, std::string_view source) : visiter<AST::ref>(ast), source(source) {}
 
 		bool is_declaration(AST::ref r) {
 			return ast[r].is_variable_declaration()
@@ -146,8 +153,8 @@ namespace sema {
 
 
 		AST::ref visit_ref(AST::ref& target, AST::ref r) override {
-			target = visit(target);
-			return r;
+			changed = true;
+			return target = visit(target);
 		}
 
 		AST::ref visit_type_lookup(AST::type_lookup& value, AST::ref r) override {
@@ -161,12 +168,22 @@ namespace sema {
 				return r;
 			}
 
+			changed = true;
 			return *found;
 		}
 
 		AST::ref visit_list_type(AST::list_type& value, AST::ref r) override {
 			as_type_block([&](){ value.type = visit(value.type); });
 			return r;
+		}
+
+		AST::ref visit_function_type(AST::function_type& value, AST::ref r) override {
+			return as_type_block([&](){
+				for(auto& arg: value.elements)
+					arg = visit(arg);
+				value.return_type = visit(value.return_type);
+				return r;
+			});
 		}
 
 		AST::ref visit_class_declaration_lookup(AST::class_declaration_lookup& value, AST::ref r) override {
@@ -189,6 +206,7 @@ namespace sema {
 			cls.base = *base;
 			ast[r] = {cls};
 
+			changed = true;
 			return visit_block(cls, r);
 		}
 
@@ -198,8 +216,8 @@ namespace sema {
 			auto level = symbol_table.try_insert(value.name, r);
 			if(level == 0)
 				diagnostics::singleton().push_error("Attempting to redeclare class", source, value.location);
-			if(level != AST::absent)
-				diagnostics::singleton().push_warning("Class shadows another symbol", source, value.location);
+			// if(level != AST::absent) // TODO: crashes?
+			// 	diagnostics::singleton().push_warning("Class shadows another symbol", source, value.location);
 			return visit_block(value, r);
 		}
 
@@ -209,6 +227,7 @@ namespace sema {
 				diagnostics::singleton().push_error("Attempting to redeclare function", source, value.location);
 			if(level != AST::absent)
 				diagnostics::singleton().push_warning("Function shadows another symbol", source, value.location);
+			if(value.return_type != AST::absent) as_type_block([&](){ value.return_type = visit(value.return_type); });
 			return visit_block(value, r);
 		}
 
@@ -257,6 +276,7 @@ namespace sema {
 			g.reference = *found;
 			ast[r] = {g};
 
+			changed = true;
 			return r;
 		}
 
@@ -292,6 +312,7 @@ namespace sema {
 			nl.reference = found->first;
 			ast[r] = {nl};
 
+			changed = true;
 			return r;
 		}
 
@@ -306,7 +327,7 @@ namespace sema {
 		}
 
 		AST::ref visit_return_statement(AST::return_statement& value, AST::ref r) override {
-			value.what = visit(value.what);
+			if(value.what != AST::absent) value.what = visit(value.what);
 			return r;
 		}
 
@@ -346,6 +367,12 @@ namespace sema {
 			value.then = visit(value.then);
 			value.condition = visit(value.condition);
 			value.else_ = visit(value.else_);
+			return r;
+		}
+
+		AST::ref visit_explicit_cast(AST::explicit_cast& value, AST::ref r) override {
+			value.reference = visit(value.reference);
+			value.type = visit(value.type);
 			return r;
 		}
 
@@ -461,6 +488,7 @@ namespace sema {
 			vs.type = value.type;
 			ast[r] = {vs};
 
+			changed = true;
 			return r;
 		}
 
@@ -492,6 +520,7 @@ namespace sema {
 			vs.type = value.type;
 			ast[r] = {vs};
 
+			changed = true;
 			return r;
 		}
 
@@ -512,18 +541,45 @@ namespace sema {
 		}
 
 		AST::ref visit_member_access_lookup(AST::member_access_lookup& value, AST::ref r) override {
-			if(value.type == AST::absent) { // Member accesses are dependent on type information!
+			if(value.resolve_type == AST::absent) { // Member accesses are dependent on type information!
 				visit(value.lhs);
 				return r;
 			}
 
-			// TODO:: Lookup
+			if(!ast[value.resolve_type].is_class_declaration()) {
+				AST::pretty_printer p(ast); p.name_only = true;
+				auto hint = "Attempting to access member on non-class type `" + p.visit(value.resolve_type) + "`";
+				diagnostics::singleton().push_error(hint, source, value.location);
+				return r;
+			}
+
+			auto base = value.resolve_type;
+			while(base != AST::absent) {
+				auto& cls = ast[base].as_class_declaration();
+				for(auto elem: cls.elements)
+					if(get_decl_name(elem) == value.interned_name) {
+						AST::member_access expr = {value.location, value.scope_block};
+						expr.lhs = value.lhs;
+						expr.reference = elem;
+						ast[r] = {expr};
+
+						changed = true;
+						return r;
+					}
+				base = cls.base;
+			}
+
+			AST::pretty_printer p(ast); p.name_only = true;
+			auto hint = "Failed to find member `" + std::string(value.interned_name) + "` in `" + p.visit(value.type) + "`";
+			diagnostics::singleton().push_error(hint, source, value.location);
 			return r;
 		}
 
-		AST::ref visit_member_access(AST::member_access& expr, AST::ref) override {
-			// return visit(expr.lhs) + ".lookup(" + std::string(expr.interned_name) + ")";
-			throw std::runtime_error("Not implemented yet!");
+		AST::ref visit_member_access(AST::member_access& value, AST::ref r) override {
+			// TODO: Should we do any validation here?
+			visit(value.lhs);
+			// visit(value.reference); // creates cycle!
+			return r;
 		}
 
 		AST::ref visit_array_index(AST::array_index& value, AST::ref r) override {
@@ -540,22 +596,27 @@ namespace sema {
 		}
 
 		AST::ref visit_float_literal(AST::float_literal& value, AST::ref r) override {
+			as_type_block([&](){ value.type = visit(value.type); }); // Lookup type!
 			return r;
 		}
 
 		AST::ref visit_int_literal(AST::int_literal& value, AST::ref r) override {
+			as_type_block([&](){ value.type = visit(value.type); }); // Lookup type!
 			return r;
 		}
 
 		AST::ref visit_string_literal(AST::string_literal& value, AST::ref r) override {
+			as_type_block([&](){ value.type = visit(value.type); }); // Lookup type!
 			return r;
 		}
 
 		AST::ref visit_bool_literal(AST::bool_literal& value, AST::ref r) override {
+			as_type_block([&](){ value.type = visit(value.type); }); // Lookup type!
 			return r;
 		}
 
 		AST::ref visit_none_literal(AST::none_literal& value, AST::ref r) override {
+			as_type_block([&](){ value.type = visit(value.type); }); // Lookup type!
 			return r;
 		}
 

@@ -6,6 +6,7 @@
 #include "parser.hpp"
 
 #include "sema.lookup.hpp" // Convert lookup AST nodes to references
+#include "sema.type_propagator.hpp" // Propigates types through the tree
 
 int main(void) {
 	std::string test = R"~(# A resizable list of integers
@@ -59,10 +60,43 @@ for num in [4, 8, 15, 16, 23, 42]:
     print(vec.capacity())
 
 )~";
-	// std::string test = "class x(object):\n\tdef add(a: int, b: int):\n\t\tpass\nif True:\n\tz = x.y()[5] % 5 if X > Y else [5, 5.6, 'h', True, False, None]";
-	// std::string test = "5\n5.6\n'h'\nTrue\nFalse\nNone";
+//     std::string test = R"~(
+// # Compute x**y
+// def exp(x: int, y: int) -> int:
+//     a: int = 0
+//     global invocations  
 
-	auto [ast, interner, builtin_block] = initialize_builtin_block();
+//     def f(i: int) -> int:
+//         nonlocal a
+//         def geta() -> int:
+//             return a
+//         if i <= 0:
+//             return geta()
+//         else:
+//             a = a * x
+//             return f(i-1)
+//     pass
+// #    a = 1
+// #    invocations = invocations + 1
+// #    return f(y)
+
+// invocations:int = 0
+// print(exp(2, 10))
+// print(exp(3, 3))
+// print(invocations) 
+//     )~";
+	// std::string test = "class x(object):\n\tdef add(a: int, b: int):\n\t\tpass\nif True:\n\tz = x.y()[5] % 5 if X > Y else [5, 5.6, 'h', True, False, None]";
+// 	std::string test = R"~(
+// class foo(object):
+//     def add(x: int, y: int) -> int:
+//         return x + y
+
+// x: foo = None
+// x = foo()
+// x.add(5, 6)
+//     )~";
+
+	auto [ast, interner, builtin_block, builtin_size] = initialize_builtin_block();
 	auto parser = initialize_parser(ast, interner);
 
 	AST::ref root;
@@ -73,8 +107,14 @@ for num in [4, 8, 15, 16, 23, 42]:
 	ast[root].as_node_base().scope_block = builtin_block;
 	if(!diagnostics::singleton().print()) return -1;
 
-	sema::resolve_lookups{ast, source}.visit(0);
-	if(!diagnostics::singleton().print()) return -2;
+    bool changed = true;
+    while(changed) {
+        changed = sema::resolve_lookups{ast, source}.start(0);
+        if(!diagnostics::singleton().print()) return -2;
+
+        sema::type_propagator{ast, interner, source, builtin_size}.visit(0);
+        if(!diagnostics::singleton().print()) return -3;
+    }
 
 	std::string reconstructed = AST::pretty_printer(ast).visit(builtin_block);
 	std::cout << reconstructed << std::endl;

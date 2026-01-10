@@ -57,12 +57,16 @@ namespace AST {
 	struct list_type : public node_base {
 		ref type;
 	};
-
 	struct ref_list {
 		std::vector<ref> elements;
 	};
-	struct block: public node_base, public ref_list {};
+	struct function_type: public node_base, public ref_list {
+		ref return_type = absent;
+	};
 
+	
+
+	struct block: public node_base, public ref_list {};
 
 
 	struct class_declaration_lookup : public block {
@@ -133,6 +137,7 @@ namespace AST {
 	struct if_expression : public expression {
 		ref then, condition, else_;
 	};
+	struct explicit_cast : public expression, public referenced {};
 
 	struct logical_and : public binary_op {};
 	struct logical_or : public binary_op {};
@@ -170,7 +175,7 @@ namespace AST {
 	struct variable_store: public expression, public referenced {};
 
 	struct member_access_lookup: public expression, public lookup {
-		ref lhs;
+		ref lhs, resolve_type = absent;
 	};
 	struct member_access: public expression, public referenced {
 		ref lhs;
@@ -191,10 +196,10 @@ namespace AST {
 		interned_string value;
 	};
 	struct int_literal : public expression {
-		int64_t value;
+		int32_t value;
 	};
 	struct float_literal : public expression {
-		double value;
+		float value;
 	};
 	struct none_literal : public expression {}; // None literal
 
@@ -204,6 +209,7 @@ namespace AST {
 \
 		X(type_lookup)\
 		X(list_type)\
+		X(function_type)\
 \
 		/* declarations */\
 		X(class_declaration_lookup)\
@@ -226,6 +232,7 @@ namespace AST {
 		X(block)\
 \
 		X(if_expression)\
+		X(explicit_cast)\
 \
 		/* binary */\
 		X(logical_and)\
@@ -281,6 +288,15 @@ namespace AST {
 			node_base* out = nullptr;
 			std::visit([&out](auto& a) {
 				out = &(node_base&)a;
+			}, *this);
+			assert(out != nullptr);
+			return *out;
+		}
+
+		expression& as_expression() {
+			expression* out = nullptr;
+			std::visit([&out](auto& a) {
+				out = &(expression&)a;
 			}, *this);
 			assert(out != nullptr);
 			return *out;
