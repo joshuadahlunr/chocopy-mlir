@@ -350,6 +350,29 @@ namespace sema {
 			return visit_block(value, r);
 		}
 
+		AST::ref visit_for_statement_lookup(AST::for_statement_lookup& value, AST::ref r) override {
+			value.source = visit(value.source);
+
+			auto found = symbol_table.find(value.interned_name);
+			if(!found) {
+				diagnostics::singleton().push_error("Attempting iterate using non-existant variable", source, value.location);
+				return r;
+			}
+			if(!ast[found->first].is_variable_declaration()) {
+				diagnostics::singleton().push_error("For loop iterators must be variables", source, value.location);
+				return r;
+			}
+
+			AST::for_statement stmt = {value.location, value.scope_block};
+			stmt.source = value.source;
+			stmt.elements = std::move(value.elements);
+			stmt.reference = found->first;
+			ast[r] = {stmt};
+			
+			changed = true;
+			return visit_block(value, r);
+		}
+
 		AST::ref visit_for_statement(AST::for_statement& value, AST::ref r) override {
 			value.source = visit(value.source);
 			return visit_block(value, r);

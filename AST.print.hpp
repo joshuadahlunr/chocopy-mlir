@@ -76,7 +76,7 @@ namespace AST {
 			std::string base = "<ABSENT>";
 			if(decl.base != AST::absent)
 				base = name_only_block([&]() { return visit(decl.base); });
-			return "class " + std::string(decl.name) + "(" + base + "):\n"
+			return "class " + std::string(decl.name) + "/" + std::to_string(r) + "(" + base + "):\n"
 				+ visit_block(decl, r);
 		}
 
@@ -84,7 +84,7 @@ namespace AST {
 			if(name_only) return std::string(decl.name) + "->" + std::to_string(r);
 
 			check_cycle(r);
-			std::string out = "def " + std::string(decl.name) + "(";
+			std::string out = "def " + std::string(decl.name) + "/" + std::to_string(r) + "(";
 			if(decl.num_parameters) out += "params n=" + std::to_string(decl.num_parameters);
 			out += "):\n" + visit_block(decl, r);
 			return out;
@@ -94,8 +94,8 @@ namespace AST {
 			if(name_only) return std::string(decl.name) + "->" + std::to_string(r);
 
 			check_cycle(r);
-			return name_only_block([&, this]{
-				std::string out = "param(" + std::to_string(decl.index) + ", " + std::string(decl.name) + "): ";
+			return name_only_block([&]{
+				std::string out = "param(" + std::to_string(decl.index) + ", " + std::string(decl.name) + "/" + std::to_string(r) + "): ";
 				if(decl.type == absent) out += "<ABSENT>";
 				else out += visit(decl.type);
 				return out;
@@ -107,7 +107,7 @@ namespace AST {
 
 			check_cycle(r);
 			return name_only_block([&, this]{
-				return std::string(decl.name) + ": " + visit(decl.type) + " = " + visit(decl.initial_value);
+				return std::string(decl.name) + "/" + std::to_string(r) + ": " + visit(decl.type) + " = " + visit(decl.initial_value);
 			});
 		}
 
@@ -185,9 +185,17 @@ namespace AST {
 				+ visit_block(stmt, r);
 		}
 
+		std::string visit_for_statement_lookup(for_statement_lookup& stmt, ref r) override {
+			check_cycle(r);
+			return "for lookup(" + std::string(stmt.interned_name) + ") in " + visit(stmt.source) + ":\n"
+				+ visit_block(stmt, r);
+		}
+
 		std::string visit_for_statement(for_statement& stmt, ref r) override {
 			check_cycle(r);
-			return "for param(0) in " + visit(stmt.source) + ":\n"
+			return "for " + name_only_block([&]{ 
+				return visit(stmt.reference);
+			}) + " in " + visit(stmt.source) + ":\n"
 				+ visit_block(stmt, r);
 		}
 

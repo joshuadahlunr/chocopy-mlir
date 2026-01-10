@@ -9,10 +9,6 @@
 #include <span>
 #include <string_view>
 
-struct IndentError : std::runtime_error {
-	using std::runtime_error::runtime_error;
-};
-
 static int next_tab_stop(int col) {
 	return col + (8 - (col % 8));
 }
@@ -65,15 +61,37 @@ inline std::string preprocess_indentation(const std::string& src) {
 		}
 
 		std::string trimmed = line.substr(i);
+		
+		// Strip comments from the trimmed portion
+		size_t comment_pos = trimmed.find('#');
+		if (comment_pos != std::string::npos) {
+			trimmed = trimmed.substr(0, comment_pos);
+		}
+		
+		// Remove trailing whitespace after comment removal
+		auto last_non_ws = trimmed.find_last_not_of(" \t\r\n\v\f\x85\xA0");
+		if (last_non_ws != std::string::npos) {
+			trimmed = trimmed.substr(0, last_non_ws + 1);
+		} else {
+			trimmed.clear();
+		}
 
 		if (!first) out << '\n';
 		first = false;
 
-		// Blank line → pass through unchanged
+		// Blank line (whitespace/comments only) → pass through unchanged
 		if (trimmed.empty()) {
 			out << line;
 			continue;
 		}
+
+		// Apply trimming to end of line
+		size_t end = line.size() - 1;
+		if(last_non_ws != std::string::npos)
+			end = i + last_non_ws + 1;
+		else if(comment_pos != std::string::npos)
+			end = i + comment_pos;
+		line = line.substr(0, end);
 
 		int prev = indent_stack.back();
 
@@ -468,13 +486,9 @@ inline peg::parser initialize_parser(AST::flattened& ast, string_interner& inter
 	};
 
 	parser["for_stmt"] = [&ast](const peg::SemanticValues &vs) {
-		AST::for_statement stmt = {make_location(vs), AST::absent, std::any_cast<AST::block>(vs[2])};
+		AST::for_statement_lookup stmt = {make_location(vs), AST::absent, std::any_cast<AST::block>(vs[2])};
 		stmt.source = AST::a2r(vs[1]);
-		stmt.elements.insert(stmt.elements.begin(), AST::make_node(ast, AST::parameter_declaration{
-			{make_location(vs)},
-			std::any_cast<interned_string>(vs[0]),
-			AST::absent, 0
-		}));
+		stmt.interned_name = std::any_cast<interned_string>(vs[0]);
 		return AST::make_node(ast, stmt);
 	};
 

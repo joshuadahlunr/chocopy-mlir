@@ -51,7 +51,7 @@ class DoublingVector(Vector):
         return self.capacity()
 
 vec:Vector = None
-num:float = 0.
+num:int = 0
 
 # Create a vector and populate it with The Numbers
 vec = DoublingVector()
@@ -60,41 +60,6 @@ for num in [4, 8, 15, 16, 23, 42]:
     print(vec.capacity())
 
 )~";
-//     std::string test = R"~(
-// # Compute x**y
-// def exp(x: int, y: int) -> int:
-//     a: int = 0
-//     global invocations  
-
-//     def f(i: int) -> int:
-//         nonlocal a
-//         def geta() -> int:
-//             return a
-//         if i <= 0:
-//             return geta()
-//         else:
-//             a = a * x
-//             return f(i-1)
-//     pass
-// #    a = 1
-// #    invocations = invocations + 1
-// #    return f(y)
-
-// invocations:int = 0
-// print(exp(2, 10))
-// print(exp(3, 3))
-// print(invocations) 
-//     )~";
-	// std::string test = "class x(object):\n\tdef add(a: int, b: int):\n\t\tpass\nif True:\n\tz = x.y()[5] % 5 if X > Y else [5, 5.6, 'h', True, False, None]";
-// 	std::string test = R"~(
-// class foo(object):
-//     def add(x: int, y: int) -> int:
-//         return x + y
-
-// x: foo = None
-// x = foo()
-// x.add(5, 6)
-//     )~";
 
 	auto [ast, interner, builtin_block, builtin_size] = initialize_builtin_block();
 	auto parser = initialize_parser(ast, interner);

@@ -105,8 +105,15 @@ namespace AST {
 			visit_block(value, r);
 		}
 
+		void visit_for_statement_lookup(for_statement_lookup& value, ref r) override {
+			value.location.pointers_to_bytes(source);
+			visit(value.source);
+			visit_block(value, r);
+		}
+
 		void visit_for_statement(for_statement& value, ref r) override {
 			value.location.pointers_to_bytes(source);
+			// visit(value.reference); // Creates cycle
 			visit(value.source);
 			visit_block(value, r);
 		}

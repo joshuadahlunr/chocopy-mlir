@@ -127,8 +127,10 @@ namespace AST {
 	struct while_statement: public block {
 		ref condition;
 	};
-	struct for_statement: public block {
-		// interned_string iterator; // The iterator is now attached as a parameter_decl in the block
+	struct for_statement_lookup: public block, public lookup {
+		ref source;
+	};
+	struct for_statement: public block, public referenced {
 		ref source;
 	};
 
@@ -228,6 +230,7 @@ namespace AST {
 		X(assignment)\
 		X(if_statement)\
 		X(while_statement)\
+		X(for_statement_lookup)\
 		X(for_statement)\
 		X(block)\
 \
