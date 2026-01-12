@@ -13,7 +13,10 @@ module {
 	func.func private @__box__$int(%v: i64) -> memref<?xi8>
 	func.func private @__unbox__$int(%memref: memref<?xi8>) -> i64
 	func.func private @__print__$int(%memref : memref<?xi8>) -> memref<?xi8>
+	func.func private @__print__$float(%memref : memref<?xi8>) -> memref<?xi8>
 	func.func private @__print__$str(%memref : memref<?xi8>) -> memref<?xi8>
+
+	func.func private @print(%memref : memref<?xi8>) -> memref<?xi8>
 
 	memref.global "private" constant @hello_string : memref<40xi8> = dense<[26, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -28,7 +31,7 @@ module {
 		0x73, 0x74, 0x72, 0x69, 0x6e, 0x67, 0x00, 0x00
 	]>
 
-	func.func @__print__$object$dispatch(%memref : memref<?xi8>) -> memref<?xi8> {
+	func.func @__print__$object$dispatcher(%memref : memref<?xi8>) -> memref<?xi8> {
 		%0 = func.call @__tag__$object(%memref) : (memref<?xi8>) -> i64
 		%tag = arith.index_cast %0 : i64 to index
 		%1 = scf.index_switch %tag -> memref<?xi8>
@@ -41,15 +44,15 @@ module {
 			scf.yield %2 : memref<?xi8>
 		}
 		default {
-			%2 = func.call @__print__$object(%memref) : (memref<?xi8>) -> memref<?xi8>
+			// %2 = func.call @__print__$object(%memref) : (memref<?xi8>) -> memref<?xi8>
+			// scf.yield %2 : memref<?xi8>
+			%false = arith.constant 0 : i1
+			cf.assert %false, "Type does not support __print__"
+			%one = arith.constant 1 : index
+			%2 = memref.alloc(%one) : memref<?xi8>
 			scf.yield %2 : memref<?xi8>
 		}
 		func.return %1 : memref<?xi8>
-	}
-
-	func.func @print(%memref : memref<?xi8>) -> memref<?xi8> {
-		%0 = func.call @__print__$object$dispatch(%memref) : (memref<?xi8>) -> memref<?xi8>
-		func.return %0 : memref<?xi8>
 	}
 
 	func.func @main() -> i32 {

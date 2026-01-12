@@ -1,6 +1,7 @@
 ; ModuleID = 'LLVMDialectModule'
 source_filename = "LLVMDialectModule"
 
+@assert_msg_1 = private constant [30 x i8] c"Provided object is not an int\00"
 @assert_msg_0 = private constant [30 x i8] c"Provided object is not an int\00"
 @assert_msg = private constant [29 x i8] c"Object size assertion failed\00"
 @"object$tag" = private constant i64 0
@@ -257,6 +258,99 @@ define { ptr, ptr, i64, [1 x i64], [1 x i64] } @"__print__$int"(ptr %0, ptr %1, 
   ret { ptr, ptr, i64, [1 x i64], [1 x i64] } %19
 }
 
+define void @"__assert__$float"(ptr %0, ptr %1, i64 %2, i64 %3, i64 %4) {
+  %6 = insertvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } poison, ptr %0, 0
+  %7 = insertvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %6, ptr %1, 1
+  %8 = insertvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %7, i64 %2, 2
+  %9 = insertvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %8, i64 %3, 3, 0
+  %10 = insertvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %9, i64 %4, 4, 0
+  %11 = load i64, ptr @"float$tag", align 4
+  %12 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 0
+  %13 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 1
+  %14 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 2
+  %15 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 3, 0
+  %16 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 4, 0
+  %17 = call i64 @"__tag__$object"(ptr %12, ptr %13, i64 %14, i64 %15, i64 %16)
+  %18 = icmp eq i64 %11, %17
+  br i1 %18, label %19, label %25
+
+19:                                               ; preds = %5
+  %20 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 0
+  %21 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 1
+  %22 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 2
+  %23 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 3, 0
+  %24 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 4, 0
+  call void @"assert$i64_count"(ptr %20, ptr %21, i64 %22, i64 %23, i64 %24, i64 2)
+  ret void
+
+25:                                               ; preds = %5
+  call void @puts(ptr @assert_msg_1)
+  call void @abort()
+  unreachable
+}
+
+define { ptr, ptr, i64, [1 x i64], [1 x i64] } @"__box__$float"(double %0) {
+  %2 = load i64, ptr @"float$tag", align 4
+  %3 = call { ptr, ptr, i64, [1 x i64], [1 x i64] } @"allocate$i64s"(i64 2)
+  %4 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %3, 0
+  %5 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %3, 1
+  %6 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %3, 2
+  %7 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %3, 3, 0
+  %8 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %3, 4, 0
+  %9 = call { ptr, ptr, i64, [1 x i64], [1 x i64] } @"as$i64s"(ptr %4, ptr %5, i64 %6, i64 %7, i64 %8)
+  %10 = bitcast double %0 to i64
+  %11 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %9, 1
+  %12 = getelementptr inbounds nuw i64, ptr %11, i64 0
+  store i64 %2, ptr %12, align 4
+  %13 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %9, 1
+  %14 = getelementptr inbounds nuw i64, ptr %13, i64 1
+  store i64 %10, ptr %14, align 4
+  ret { ptr, ptr, i64, [1 x i64], [1 x i64] } %3
+}
+
+define double @"__unbox__$float"(ptr %0, ptr %1, i64 %2, i64 %3, i64 %4) {
+  %6 = insertvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } poison, ptr %0, 0
+  %7 = insertvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %6, ptr %1, 1
+  %8 = insertvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %7, i64 %2, 2
+  %9 = insertvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %8, i64 %3, 3, 0
+  %10 = insertvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %9, i64 %4, 4, 0
+  %11 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 0
+  %12 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 1
+  %13 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 2
+  %14 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 3, 0
+  %15 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 4, 0
+  call void @"__assert__$float"(ptr %11, ptr %12, i64 %13, i64 %14, i64 %15)
+  %16 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 0
+  %17 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 1
+  %18 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 2
+  %19 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 3, 0
+  %20 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 4, 0
+  %21 = call { ptr, ptr, i64, [1 x i64], [1 x i64] } @"as$i64s"(ptr %16, ptr %17, i64 %18, i64 %19, i64 %20)
+  %22 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %21, 1
+  %23 = getelementptr inbounds nuw i64, ptr %22, i64 1
+  %24 = load i64, ptr %23, align 4
+  %25 = bitcast i64 %24 to double
+  ret double %25
+}
+
+define { ptr, ptr, i64, [1 x i64], [1 x i64] } @"__print__$float"(ptr %0, ptr %1, i64 %2, i64 %3, i64 %4) {
+  %6 = insertvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } poison, ptr %0, 0
+  %7 = insertvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %6, ptr %1, 1
+  %8 = insertvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %7, i64 %2, 2
+  %9 = insertvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %8, i64 %3, 3, 0
+  %10 = insertvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %9, i64 %4, 4, 0
+  %11 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 0
+  %12 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 1
+  %13 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 2
+  %14 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 3, 0
+  %15 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 4, 0
+  %16 = call double @"__unbox__$float"(ptr %11, ptr %12, i64 %13, i64 %14, i64 %15)
+  %17 = call i32 (ptr, ...) @printf(ptr @"print$float_format", double %16)
+  %18 = sext i32 %17 to i64
+  %19 = call { ptr, ptr, i64, [1 x i64], [1 x i64] } @"__box__$int"(i64 %18)
+  ret { ptr, ptr, i64, [1 x i64], [1 x i64] } %19
+}
+
 define { ptr, ptr, i64, [1 x i64], [1 x i64] } @"__print__$str"(ptr %0, ptr %1, i64 %2, i64 %3, i64 %4) {
   %6 = insertvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } poison, ptr %0, 0
   %7 = insertvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %6, ptr %1, 1
@@ -271,6 +365,23 @@ define { ptr, ptr, i64, [1 x i64], [1 x i64] } @"__print__$str"(ptr %0, ptr %1, 
   %16 = sext i32 %15 to i64
   %17 = call { ptr, ptr, i64, [1 x i64], [1 x i64] } @"__box__$int"(i64 %16)
   ret { ptr, ptr, i64, [1 x i64], [1 x i64] } %17
+}
+
+declare { ptr, ptr, i64, [1 x i64], [1 x i64] } @"__print__$object$dispatcher"(ptr, ptr, i64, i64, i64)
+
+define { ptr, ptr, i64, [1 x i64], [1 x i64] } @print(ptr %0, ptr %1, i64 %2, i64 %3, i64 %4) {
+  %6 = insertvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } poison, ptr %0, 0
+  %7 = insertvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %6, ptr %1, 1
+  %8 = insertvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %7, i64 %2, 2
+  %9 = insertvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %8, i64 %3, 3, 0
+  %10 = insertvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %9, i64 %4, 4, 0
+  %11 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 0
+  %12 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 1
+  %13 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 2
+  %14 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 3, 0
+  %15 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %10, 4, 0
+  %16 = call { ptr, ptr, i64, [1 x i64], [1 x i64] } @"__print__$object$dispatcher"(ptr %11, ptr %12, i64 %13, i64 %14, i64 %15)
+  ret { ptr, ptr, i64, [1 x i64], [1 x i64] } %16
 }
 
 !llvm.module.flags = !{!0}

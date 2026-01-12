@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -328,22 +329,22 @@ namespace AST {
 		return out;
 	}
 
-	template<typename Treturn>
+	template<typename Treturn, typename... Textra_args>
 	struct visiter {
 		AST::flattened& ast;
 
 		visiter(AST::flattened& ast) : ast(ast) {}
 
 #define IMPLEMENT_VISIT_DECL(type)\
-		virtual Treturn visit_##type(type& value, AST::ref ref) = 0;
+		virtual Treturn visit_##type(type& value, AST::ref ref, Textra_args... extra) = 0;
 
 		NODE_TYPES_STAMPER(IMPLEMENT_VISIT_DECL)
 
-		Treturn visit(node& n, AST::ref r) {
+		Treturn visit(node& n, AST::ref r, Textra_args... extra) {
 			switch(n.index()) {
 #define IMPLEMENT_VISIT(type)\
 				case detail::variant_index_v<type, node::variant>:\
-					return visit_##type(std::get<type>(n), r);
+					return visit_##type(std::get<type>(n), r, std::forward<Textra_args>(extra)...);
 
 				NODE_TYPES_STAMPER(IMPLEMENT_VISIT)
 
@@ -358,8 +359,8 @@ namespace AST {
 
 		}
 
-		Treturn visit(const ref ref) {
-			return visit(ast[ref], ref);
+		Treturn visit(const ref ref, Textra_args... args) {
+			return visit(ast[ref], ref, std::forward<Textra_args>(args)...);
 		}
 	};
 }

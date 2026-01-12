@@ -130,6 +130,57 @@ module {
 
 
 
+	func.func public @__assert__$float(%memref: memref<?xi8>) {
+		%0 = memref.get_global @float$tag : memref<i64>
+		%expected_tag = memref.load %0[] : memref<i64>
+		%actual_tag = func.call @__tag__$object(%memref) : (memref<?xi8>) -> i64
+		%eq = arith.cmpi eq, %expected_tag, %actual_tag : i64
+		cf.assert %eq, "Provided object is not an int"
+
+		%two = arith.constant 2 : index
+		func.call @assert$i64_count(%memref, %two) : (memref<?xi8>, index) -> ()
+		func.return
+	}
+
+	func.func public @__box__$float(%v: f64) -> memref<?xi8> {
+		%0 = memref.get_global @float$tag : memref<i64>
+		%tag = memref.load %0[] : memref<i64>
+
+		// %size = arith.constant 2 * sizeof(i64) : index
+		%count = arith.constant 2 : index
+		%out = func.call @allocate$i64s(%count) : (index) -> memref<?xi8>
+		%out_i64s = func.call @as$i64s(%out) : (memref<?xi8>) -> memref<?xi64>
+
+		%i = arith.bitcast %v : f64 to i64
+		%zero = arith.constant 0 : index
+		memref.store %tag, %out_i64s[%zero] : memref<?xi64>
+		%one = arith.constant 1 : index
+		memref.store %i, %out_i64s[%one] : memref<?xi64>
+
+		func.return %out : memref<?xi8>
+	}
+
+	func.func public @__unbox__$float(%memref: memref<?xi8>) -> f64 {
+		func.call @__assert__$float(%memref) : (memref<?xi8>) -> ()
+		%i64s = func.call @as$i64s(%memref) : (memref<?xi8>) -> memref<?xi64>
+
+		%one = arith.constant 1 : index
+		%i = memref.load %i64s[%one] : memref<?xi64>
+		%f = arith.bitcast %i : i64 to f64
+		func.return %f : f64
+	}
+
+	func.func public @__print__$float(%memref : memref<?xi8>) -> memref<?xi8> {
+		%v = func.call @__unbox__$float(%memref) : (memref<?xi8>) -> f64
+		%f = llvm.mlir.addressof @print$float_format : !llvm.ptr
+		%0 = llvm.call @printf(%f, %v) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, f64) -> i32
+		%1 = arith.extsi %0 : i32 to i64
+		%2 = func.call @__box__$int(%1) : (i64) -> memref<?xi8>
+		func.return %2 : memref<?xi8>
+	}
+
+
+
 	func.func public @__print__$str(%memref : memref<?xi8>) -> memref<?xi8> {
 		// func.call @__assert__$srt(%memref) : (memref<?xi8>) -> ()
 		%0 = memref.extract_aligned_pointer_as_index %memref : memref<?xi8> -> index
@@ -144,5 +195,11 @@ module {
 		%4 = arith.extsi %3 : i32 to i64
 		%5 = func.call @__box__$int(%4) : (i64) -> memref<?xi8>
 		func.return %5 : memref<?xi8>
+	}
+
+	func.func private @__print__$object$dispatcher(%memref : memref<?xi8>) -> memref<?xi8>
+	func.func @print(%memref : memref<?xi8>) -> memref<?xi8> {
+		%0 = func.call @__print__$object$dispatcher(%memref) : (memref<?xi8>) -> memref<?xi8>
+		func.return %0 : memref<?xi8>
 	}
 }
