@@ -1,5 +1,6 @@
 #include "AST.hpp"
 #include "AST.print.hpp"
+#include "builtin_scope.hpp"
 #include "string_helpers.hpp"
 #include <array>
 #include <cassert>
@@ -15,29 +16,13 @@ namespace sema {
 	struct type_propagator : public AST::visiter<AST::ref> {
 		string_interner& interner;
 		std::string_view source;
-		size_t builtin_size;
+		builtin_scope builtin;
 
-		explicit type_propagator(AST::flattened &ast, string_interner& interner, std::string_view source, size_t builtin_size) 
-			: visiter<ref>(ast), interner(interner), source(source), builtin_size(builtin_size) {}
+		explicit type_propagator(AST::flattened &ast, string_interner& interner, std::string_view source, builtin_scope builtin) 
+			: visiter<ref>(ast), interner(interner), source(source), builtin(builtin) {}
 
 		using ref = AST::ref;
 		const ref absent = AST::absent;
-
-		ref none = absent;
-		ref empty = absent;
-		ref Int = absent;
-		ref Float = absent;
-		ref Bool = absent;
-		ref Str = absent;
-
-		bool builtin_types_missing() {
-			return none == absent
-				|| empty == absent
-				|| Int == absent
-				|| Float == absent
-				|| Bool == absent
-				|| Str == absent;
-		}
 
 		bool type_equivalent(ref a_ref, ref b_ref) {
 			if(a_ref == absent || b_ref == absent)
@@ -84,18 +69,18 @@ namespace sema {
 			// 	return true; // Unnecessary since they are now subtypes?
 
 			// T1 is <None> and T2 is not int, bool, or str.
-			if(from_ref == none) {
-				if(to_ref == Int || to_ref == Float || to_ref == Bool || to_ref == Str)
+			if(from_ref == builtin.none) {
+				if(to_ref == builtin.Int || to_ref == builtin.Float || to_ref == builtin.Bool || to_ref == builtin.Str)
 					return false;
 				return true;
 			}
 
 			// T2 is a list type [T] and T1 is <Empty>.
-			if(from_ref == empty && to.is_list_type())
+			if(from_ref == builtin.empty && to.is_list_type())
 				return true;
 
 			//  T2 is a the list type [T] and T1 is [<None>], where <None> ≤a T.
-			if(from.is_list_type() && from.as_list_type().type == none && to.is_list_type())
+			if(from.is_list_type() && from.as_list_type().type == builtin.none && to.is_list_type())
 				return true;
 
 			return false;
@@ -118,7 +103,7 @@ namespace sema {
 				AST::pretty_printer p(ast); p.name_only = true;
 				auto hint = "The two sides of this expression have incompatible types `" + p.visit(lhs_type) + "` and `" + p.visit(rhs_type) + "`";
 				diagnostics::singleton().push_error(hint, source, location);
-				return none;
+				return builtin.none;
 			}
 
 			if(!type_equivalent(lhs_type, rhs_type)) {
@@ -161,7 +146,7 @@ namespace sema {
 					hint += "`" + p.visit(type) + "` ";
 				hint += "received `" + p.visit(type) + "`";
 				diagnostics::singleton().push_error(hint, source, location);
-				return none;	
+				return builtin.none;	
 			}
 
 			if(!type_equivalent(type, *valid_type)) {
@@ -239,7 +224,7 @@ namespace sema {
 			}
 
 			AST::function_type type;
-			type.return_type = value.return_type == absent ? none : value.return_type;
+			type.return_type = value.return_type == absent ? builtin.none : value.return_type;
 			type.elements.resize(value.num_parameters);
 			for(size_t i = 0; i < value.num_parameters; ++i)
 				if(ast[value.elements[i]].is_parameter_declaration())
@@ -255,8 +240,8 @@ namespace sema {
 
 		ref visit_variable_declaration(AST::variable_declaration& value, ref r) override {
 			if(memoization_cache.contains(r)) return memoization_cache[r];
-			if(r > builtin_size) 
-				check_expression_expected(value.initial_value, std::array<ref, 2>{value.type, none}, value.location);
+			if(r > builtin.size) 
+				check_expression_expected(value.initial_value, std::array<ref, 2>{value.type, builtin.none}, value.location);
 			else visit(value.initial_value);
 			return memoization_cache[r] = value.type;
 		}
@@ -280,7 +265,7 @@ namespace sema {
 		}
 
 		ref visit_pass_statement(AST::pass_statement&, ref r) override {
-			return none;
+			return builtin.none;
 		}
 
 		ref visit_return_statement(AST::return_statement& value, ref r) override {
@@ -291,18 +276,18 @@ namespace sema {
 				last = scope, scope = ast[scope].as_node_base().scope_block;
 			if(!ast[last].is_function_declaration()) {
 				diagnostics::singleton().push_error("Return statements can only be inside of functions", source, value.location);
-				return memoization_cache[r] = none;	
+				return memoization_cache[r] = builtin.none;	
 			}
 			if(value.what != absent) {
 				auto return_type = ast[last].as_function_declaration().return_type;
 				if(return_type == absent) {
 					diagnostics::singleton().push_error("Returning a value from a function with no return type", source, value.location);
-					return memoization_cache[r] = none;
+					return memoization_cache[r] = builtin.none;
 				}
 				check_expression_expected(value.what, std::array<ref, 1>{return_type}, value.location);
 			}
 
-			return memoization_cache[r] = none;
+			return memoization_cache[r] = builtin.none;
 		}
 
 		ref visit_assignment(AST::assignment& value, ref r) override {
@@ -319,7 +304,7 @@ namespace sema {
 				return memoization_cache[r] = value.type = lhs_type;	
 			}
 
-			if(auto type = check_expression_expected(value.rhs, std::array<ref, 1>{lhs_type}, value.location); type != none)
+			if(auto type = check_expression_expected(value.rhs, std::array<ref, 1>{lhs_type}, value.location); type != builtin.none)
 				return memoization_cache[r] = value.type = type;
 			return memoization_cache[r] = value.type = lhs_type;
 		}
@@ -328,82 +313,66 @@ namespace sema {
 			if(memoization_cache.contains(r)) return memoization_cache[r];
 			for(auto& [condition, block]: value.condition_block_pairs) {
 				if(condition != absent)
-					if(auto condition_type = visit(condition); condition_type != Bool) {
+					if(auto condition_type = visit(condition); condition_type != builtin.Bool) {
 						diagnostics::singleton().push_error("If conditions must have type `bool`", source, ast[condition].as_node_base().location);
-						return memoization_cache[r] = none;
+						return memoization_cache[r] = builtin.none;
 					}
 				visit_block(block, r);
 			}
-			return memoization_cache[r] = none;
+			return memoization_cache[r] = builtin.none;
 		}
 
 		ref visit_while_statement(AST::while_statement& value, ref r) override {
 			if(memoization_cache.contains(r)) return memoization_cache[r];
 			if(value.condition != absent)
-				if(auto condition_type = visit(value.condition); condition_type != Bool) {
+				if(auto condition_type = visit(value.condition); condition_type != builtin.Bool) {
 					diagnostics::singleton().push_error("While conditions must have type `bool`", source, ast[value.condition].as_node_base().location);
-					return memoization_cache[r] = none;
+					return memoization_cache[r] = builtin.none;
 				}
 			visit_block(value, r);
-			return memoization_cache[r] = none;
+			return memoization_cache[r] = builtin.none;
 		}
 
 		ref visit_for_statement_lookup(AST::for_statement_lookup& value, ref r) override {
 			if(memoization_cache.contains(r)) return memoization_cache[r];
 			auto source_type = visit(value.source);
-			if( !(source_type == Str || ast[source_type].is_list_type()) ) {
+			if( !(source_type == builtin.Str || ast[source_type].is_list_type()) ) {
 				diagnostics::singleton().push_error("Fors can only iterate over `list`s and `str`s", source, ast[value.source].as_node_base().location);
-				return memoization_cache[r] = none;
+				return memoization_cache[r] = builtin.none;
 			}
 
 			visit_block(value, r);
-			return memoization_cache[r] = none;
+			return memoization_cache[r] = builtin.none;
 		}
 
 		ref visit_for_statement(AST::for_statement& value, ref r) override {
 			if(memoization_cache.contains(r)) return memoization_cache[r];
 			auto source_type = visit(value.source);
-			if( !(source_type == Str || ast[source_type].is_list_type()) ) {
+			if( !(source_type == builtin.Str || ast[source_type].is_list_type()) ) {
 				diagnostics::singleton().push_error("Fors can only iterate over `list`s and `str`s", source, ast[value.source].as_node_base().location);
-				return memoization_cache[r] = none;
+				return memoization_cache[r] = builtin.none;
 			}
 
-			auto param_type = source_type == Str ? Str : ast[source_type].as_list_type().type;
+			auto param_type = source_type == builtin.Str ? builtin.Str : ast[source_type].as_list_type().type;
 			check_expression_expected(value.reference, std::array<ref, 1>{param_type}, value.location);
 
 			visit_block(value, r);
-			return memoization_cache[r] = none;
+			return memoization_cache[r] = builtin.none;
 		}
 
 		ref visit_block(AST::block& value, ref r) override {
 			if(memoization_cache.contains(r)) return memoization_cache[r];
-			if(builtin_types_missing())
-				for(auto elem: value.elements)
-					if(ast[elem].is_class_declaration()) {
-						if(std::string_view{ast[elem].as_class_declaration().name} == "<NONE>")
-							none = elem;
-						else if(std::string_view{ast[elem].as_class_declaration().name} == "<EMPTY>")
-							empty = elem;
-						else if(std::string_view{ast[elem].as_class_declaration().name} == "int")
-							Int = elem;
-						else if(std::string_view{ast[elem].as_class_declaration().name} == "float")
-							Float = elem;
-						else if(std::string_view{ast[elem].as_class_declaration().name} == "bool")
-							Bool = elem;
-						else if(std::string_view{ast[elem].as_class_declaration().name} == "str")
-							Str = elem;
-					}
 
 			for(auto elem: value.elements)
 				visit(elem);
-			return memoization_cache[r] = none;
+			return memoization_cache[r] = builtin.none;
 		}
 
 
 
 		ref visit_if_expression(AST::if_expression& value, ref r) override {
 			if(memoization_cache.contains(r)) return memoization_cache[r];
-			if(auto condition_type = visit(value.condition); !(condition_type == Bool || condition_type == absent)) {
+			if(auto condition_type = visit(value.condition); !(condition_type == builtin.Bool || condition_type == absent)) {
 				diagnostics::singleton().push_error("If conditions must have type `bool`", source, ast[value.condition].as_node_base().location);
 				return memoization_cache[r] = value.type = absent;
 			}
@@ -420,83 +389,83 @@ namespace sema {
 		ref visit_logical_and(AST::logical_and& value, ref r) override {
 			if(memoization_cache.contains(r)) return memoization_cache[r];
 			auto type = check_expression(value.lhs, value.rhs, value.location);
-			if(check_expression_expected(value.lhs, std::array<ref, 1>{Bool}, value.location, type) != none)
-				check_expression_expected(value.rhs, std::array<ref, 1>{Bool}, value.location, type);
-			return memoization_cache[r] = value.type = Bool;
+			if(check_expression_expected(value.lhs, std::array<ref, 1>{builtin.Bool}, value.location, type) != builtin.none)
+				check_expression_expected(value.rhs, std::array<ref, 1>{builtin.Bool}, value.location, type);
+			return memoization_cache[r] = value.type = builtin.Bool;
 		}
 
 		ref visit_logical_or(AST::logical_or& value, ref r) override {
 			if(memoization_cache.contains(r)) return memoization_cache[r];
 			auto type = check_expression(value.lhs, value.rhs, value.location);
-			if(check_expression_expected(value.lhs, std::array<ref, 1>{Bool}, value.location, type) != none)
-				check_expression_expected(value.rhs, std::array<ref, 1>{Bool}, value.location, type);
-			return memoization_cache[r] = value.type = Bool;
+			if(check_expression_expected(value.lhs, std::array<ref, 1>{builtin.Bool}, value.location, type) != builtin.none)
+				check_expression_expected(value.rhs, std::array<ref, 1>{builtin.Bool}, value.location, type);
+			return memoization_cache[r] = value.type = builtin.Bool;
 		}
 
 		std::vector<ref> relational_allowed(bool equality_expression = false) {
 			if(equality_expression)
-				return {Int, Float, Str, Bool};
-			return {Int, Float};
+				return {builtin.Int, builtin.Float, builtin.Str, builtin.Bool};
+			return {builtin.Int, builtin.Float};
 		}
 
 		ref visit_equal(AST::equal& value, ref r) override {
 			if(memoization_cache.contains(r)) return memoization_cache[r];
 			auto type = check_expression(value.lhs, value.rhs, value.location);
-			if(check_expression_expected(value.lhs, relational_allowed(true), value.location, type) != none)
+			if(check_expression_expected(value.lhs, relational_allowed(true), value.location, type) != builtin.none)
 				check_expression_expected(value.rhs, relational_allowed(true), value.location, type);
-			return memoization_cache[r] = value.type = Bool;
+			return memoization_cache[r] = value.type = builtin.Bool;
 		}
 
 		ref visit_not_equal(AST::not_equal& value, ref r) override {
 			if(memoization_cache.contains(r)) return memoization_cache[r];
 			auto type = check_expression(value.lhs, value.rhs, value.location);
-			if(check_expression_expected(value.lhs, relational_allowed(true), value.location, type) != none)
+			if(check_expression_expected(value.lhs, relational_allowed(true), value.location, type) != builtin.none)
 				check_expression_expected(value.rhs, relational_allowed(true), value.location, type);
-			return memoization_cache[r] = value.type = Bool;
+			return memoization_cache[r] = value.type = builtin.Bool;
 		}
 
 		ref visit_less(AST::less& value, ref r) override {
 			if(memoization_cache.contains(r)) return memoization_cache[r];
 			auto type = check_expression(value.lhs, value.rhs, value.location);
-			if(check_expression_expected(value.lhs, relational_allowed(), value.location, type) != none)
+			if(check_expression_expected(value.lhs, relational_allowed(), value.location, type) != builtin.none)
 				check_expression_expected(value.rhs, relational_allowed(), value.location, type);
-			return memoization_cache[r] = value.type = Bool;
+			return memoization_cache[r] = value.type = builtin.Bool;
 		}
 
 		ref visit_less_equal(AST::less_equal& value, ref r) override {
 			if(memoization_cache.contains(r)) return memoization_cache[r];
 			auto type = check_expression(value.lhs, value.rhs, value.location);
-			if(check_expression_expected(value.lhs, relational_allowed(), value.location, type) != none)
+			if(check_expression_expected(value.lhs, relational_allowed(), value.location, type) != builtin.none)
 				check_expression_expected(value.rhs, relational_allowed(), value.location, type);
-			return memoization_cache[r] = value.type = Bool;
+			return memoization_cache[r] = value.type = builtin.Bool;
 		}
 
 		ref visit_greater(AST::greater& value, ref r) override {
 			if(memoization_cache.contains(r)) return memoization_cache[r];
 			auto type = check_expression(value.lhs, value.rhs, value.location);
-			if(check_expression_expected(value.lhs, relational_allowed(), value.location, type) != none)
+			if(check_expression_expected(value.lhs, relational_allowed(), value.location, type) != builtin.none)
 				check_expression_expected(value.rhs, relational_allowed(), value.location, type);
-			return memoization_cache[r] = value.type = Bool;
+			return memoization_cache[r] = value.type = builtin.Bool;
 		}
 
 		ref visit_greater_equal(AST::greater_equal& value, ref r) override {
 			if(memoization_cache.contains(r)) return memoization_cache[r];
 			auto type = check_expression(value.lhs, value.rhs, value.location);
-			if(check_expression_expected(value.lhs, relational_allowed(), value.location, type) != none)
+			if(check_expression_expected(value.lhs, relational_allowed(), value.location, type) != builtin.none)
 				check_expression_expected(value.rhs, relational_allowed(), value.location, type);
-			return memoization_cache[r] = value.type = Bool;
+			return memoization_cache[r] = value.type = builtin.Bool;
 		}
 
 		ref visit_is(AST::is& value, ref r) override {
 			if(memoization_cache.contains(r)) return memoization_cache[r];
 			// TODO: Should we limit the allowed input types?
 			check_expression(value.lhs, value.rhs, value.location);
-			return memoization_cache[r] = value.type = Bool;
+			return memoization_cache[r] = value.type = builtin.Bool;
 		}
 
 		ref visit_add(AST::add& value, ref r) override {
 			if(memoization_cache.contains(r)) return memoization_cache[r];
-			std::array<ref, 4> add_allowed = {Int, Float, Str, empty};
+			std::array<ref, 4> add_allowed = {builtin.Int, builtin.Float, builtin.Str, builtin.empty};
 			auto type = check_expression(value.lhs, value.rhs, value.location);
 			if(type == absent) return memoization_cache[r] = absent;
 			if( !(ast[type].is_list_type() || std::find(add_allowed.begin(), add_allowed.end(), type) != add_allowed.end()) ) {
@@ -508,13 +477,13 @@ namespace sema {
 		}
 
 		std::array<ref, 2> arithmetic_allowed() {
-			return {Int, Float};
+			return {builtin.Int, builtin.Float};
 		}
 
 		ref visit_subtract(AST::subtract& value, ref r) override {
 			if(memoization_cache.contains(r)) return memoization_cache[r];
 			auto type = check_expression(value.lhs, value.rhs, value.location);
-			if(check_expression_expected(value.lhs, arithmetic_allowed(), value.location, type) != none)
+			if(check_expression_expected(value.lhs, arithmetic_allowed(), value.location, type) != builtin.none)
 				check_expression_expected(value.rhs, arithmetic_allowed(), value.location, type);
 			return memoization_cache[r] = value.type = type;
 		}
@@ -522,7 +491,7 @@ namespace sema {
 		ref visit_multiply(AST::multiply& value, ref r) override {
 			if(memoization_cache.contains(r)) return memoization_cache[r];
 			auto type = check_expression(value.lhs, value.rhs, value.location);
-			if(check_expression_expected(value.lhs, arithmetic_allowed(), value.location, type) != none)
+			if(check_expression_expected(value.lhs, arithmetic_allowed(), value.location, type) != builtin.none)
 				check_expression_expected(value.rhs, arithmetic_allowed(), value.location, type);
 			return memoization_cache[r] = value.type = type;
 		}
@@ -530,30 +499,30 @@ namespace sema {
 		ref visit_quotient(AST::quotient& value, ref r) override {
 			if(memoization_cache.contains(r)) return memoization_cache[r];
 			auto type = check_expression(value.lhs, value.rhs, value.location);
-			if(check_expression_expected(value.lhs, std::array<ref, 1>{Int}, value.location, type) != none)
-				check_expression_expected(value.rhs, std::array<ref, 1>{Int}, value.location, type);
+			if(check_expression_expected(value.lhs, std::array<ref, 1>{builtin.Int}, value.location, type) != builtin.none)
+				check_expression_expected(value.rhs, std::array<ref, 1>{builtin.Int}, value.location, type);
 			return memoization_cache[r] = value.type = type;
 		}
 
 		ref visit_remainder(AST::remainder& value, ref r) override {
 			if(memoization_cache.contains(r)) return memoization_cache[r];
 			auto type = check_expression(value.lhs, value.rhs, value.location);
-			if(check_expression_expected(value.lhs, std::array<ref, 1>{Int}, value.location, type) != none)
-				check_expression_expected(value.rhs, std::array<ref, 1>{Int}, value.location, type);
+			if(check_expression_expected(value.lhs, std::array<ref, 1>{builtin.Int}, value.location, type) != builtin.none)
+				check_expression_expected(value.rhs, std::array<ref, 1>{builtin.Int}, value.location, type);
 			return memoization_cache[r] = value.type = type;
 		}
 
 		ref visit_divide(AST::divide& value, ref r) override {
 			if(memoization_cache.contains(r)) return memoization_cache[r];
 			auto type = check_expression(value.lhs, value.rhs, value.location);
-			if(check_expression_expected(value.lhs, std::array<ref, 1>{Float}, value.location, type) != none)
-				check_expression_expected(value.rhs, std::array<ref, 1>{Float}, value.location, type);
+			if(check_expression_expected(value.lhs, std::array<ref, 1>{builtin.Float}, value.location, type) != builtin.none)
+				check_expression_expected(value.rhs, std::array<ref, 1>{builtin.Float}, value.location, type);
 			return memoization_cache[r] = value.type = type;
 		}
 
 		ref visit_logical_not(AST::logical_not& value, ref r) override {
 			if(memoization_cache.contains(r)) return memoization_cache[r];
-			return memoization_cache[r] = value.type = check_expression_expected(value.what, std::array<ref, 1>{Bool}, value.location);
+			return memoization_cache[r] = value.type = check_expression_expected(value.what, std::array<ref, 1>{builtin.Bool}, value.location);
 		}
 
 		ref visit_negate(AST::negate& value, ref r) override {
@@ -627,14 +596,14 @@ namespace sema {
 			if(memoization_cache.contains(r)) return memoization_cache[r];
 			auto lhs_type = visit(value.lhs);
 			if(lhs_type == absent) return memoization_cache[r] = absent;
-			if( !(lhs_type == Str || ast[lhs_type].is_list_type()) ) {
+			if( !(lhs_type == builtin.Str || ast[lhs_type].is_list_type()) ) {
 				AST::pretty_printer p(ast); p.name_only = true;
 				auto hint = "Only `list`s and `str`s can be indexed, not `" + p.visit(lhs_type) + "`";
 				diagnostics::singleton().push_error(hint, source, value.location);
 				return memoization_cache[r] = value.type = absent;
 			}
 
-			return memoization_cache[r] = value.type = lhs_type == Str ? Str : ast[lhs_type].as_list_type().type;
+			return memoization_cache[r] = value.type = lhs_type == builtin.Str ? builtin.Str : ast[lhs_type].as_list_type().type;
 		}
 
 		ref visit_call(AST::call& value, ref r) override {
@@ -714,23 +683,23 @@ namespace sema {
 		}
 
 		ref visit_float_literal(AST::float_literal& value, ref r) override {
-			return value.type = Float;
+			return value.type = builtin.Float;
 		}
 
 		ref visit_int_literal(AST::int_literal& value, ref r) override {
-			return value.type = Int;
+			return value.type = builtin.Int;
 		}
 
 		ref visit_string_literal(AST::string_literal& value, ref r) override {
-			return value.type = Str;
+			return value.type = builtin.Str;
 		}
 
 		ref visit_bool_literal(AST::bool_literal& value, ref r) override {
-			return value.type = Bool;
+			return value.type = builtin.Bool;
 		}
 
 		ref visit_none_literal(AST::none_literal& value, ref r) override {
-			return value.type = none;
+			return value.type = builtin.none;
 		}
 
 		ref visit_list_literal(AST::list_literal& value, ref r) override {

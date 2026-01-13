@@ -1,9 +1,11 @@
 
 #include <iostream>
 
+#include "parser.hpp"
+#include "builtin_scope.hpp"
+
 #include "AST.print.hpp" // Print pass
 #include "AST.canonicalize_locations.hpp" // Update locaions to not be pointers but proper bytes
-#include "parser.hpp"
 
 #include "sema.lookup.hpp" // Convert lookup AST nodes to references
 #include "sema.type_propagator.hpp" // Propigates types through the tree
@@ -61,27 +63,27 @@ for num in [4, 8, 15, 16, 23, 42]:
 
 )~";
 
-	auto [ast, interner, builtin_block, builtin_size] = initialize_builtin_block();
+	auto [ast, interner, builtin_scope] = initialize_builtin_block();
 	auto parser = initialize_parser(ast, interner);
 
 	AST::ref root;
 	auto source = preprocess_indentation(test);
 	parser.parse(source, root, interner.intern("<generated>").data());
 	AST::canonicalize_locations{ast, source}.visit(root);
-	ast[builtin_block].as_block().elements.push_back(root);
-	ast[root].as_node_base().scope_block = builtin_block;
+	ast[builtin_scope.root].as_block().elements.push_back(root);
+	ast[root].as_node_base().scope_block = builtin_scope.root;
 	if(!diagnostics::singleton().print()) return -1;
 
     bool changed = true;
     while(changed) {
-        changed = sema::resolve_lookups{ast, source}.start(0);
+        changed = sema::resolve_lookups{ast, source}.start(builtin_scope.root);
         if(!diagnostics::singleton().print()) return -2;
 
-        sema::type_propagator{ast, interner, source, builtin_size}.visit(0);
+        sema::type_propagator{ast, interner, source, builtin_scope}.visit(builtin_scope.root);
         if(!diagnostics::singleton().print()) return -3;
     }
 
-	std::string reconstructed = AST::pretty_printer(ast).visit(builtin_block);
+	std::string reconstructed = AST::pretty_printer(ast).visit(builtin_scope.root);
 	std::cout << reconstructed << std::endl;
 
 	// std::cout << root << std::endl;
