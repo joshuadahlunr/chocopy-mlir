@@ -9,6 +9,7 @@
 
 #include "sema.lookup.hpp" // Convert lookup AST nodes to references
 #include "sema.type_propagator.hpp" // Propigates types through the tree
+#include "sema.build_vtables.hpp" // Figures out the overload sets for all the vtables
 
 int main(void) {
 	std::string test = R"~(# A resizable list of integers
@@ -83,8 +84,10 @@ for num in [4, 8, 15, 16, 23, 42]:
         if(!diagnostics::singleton().print()) return -3;
     }
 
-	std::string reconstructed = AST::pretty_printer(ast).visit(builtin_scope.root);
-	std::cout << reconstructed << std::endl;
+	sema::build_vtables{ast, interner, source, builtin_scope}.visit(builtin_scope.root);
+
+	std::string mlir = codegen::mlir{ast, source}.start(root);
+	std::cout << mlir << std::endl;
 
 	// std::cout << root << std::endl;
 

@@ -39,8 +39,9 @@ inline std::tuple<AST::flattened, string_interner, builtin_scope> initialize_bui
 		return out;
 	};
 
-	auto make_function = [&](std::string_view name, size_t num_params, AST::ref return_type) {
+	auto make_function = [&](std::string_view name, AST::ref scope, size_t num_params, AST::ref return_type) {
 		AST::function_declaration func = {builtin};
+		func.scope_block = scope;
 		func.name = interner.intern(name);
 		func.num_parameters = num_params;
 		func.return_type = return_type;
@@ -65,39 +66,39 @@ inline std::tuple<AST::flattened, string_interner, builtin_scope> initialize_bui
 	object.elements.push_back(AST::make_node(ast, AST::variable_declaration{
 		builtin, interner.intern("__tag__"), scope.__i64__, none_lit
 	}));
-	object.elements.push_back(make_function("__print__", 1, scope.Int));
-	object.elements.push_back(make_function("__len__", 1, scope.Int));
+	object.elements.push_back(make_function("__print__", scope.object, 1, scope.Int));
+	object.elements.push_back(make_function("__len__", scope.object, 1, scope.Int));
 	
 	auto& Float = ast[scope.Float].as_class_declaration();
 	Float.elements.push_back(AST::make_node(ast, AST::variable_declaration{
 		builtin, interner.intern("__value__"), scope.__i64__, zero
 	}));
-	Float.elements.push_back(make_function("__print__", 1, scope.Int));
+	Float.elements.push_back(make_function("__print__", scope.Float, 1, scope.Int));
 
 	ast[zero].as_int_literal().type = scope.Int;
 	auto& Int = ast[scope.Int].as_class_declaration();
-	Int.elements.push_back(make_function("__print__", 1, scope.Int));
+	Int.elements.push_back(make_function("__print__", scope.Int, 1, scope.Int));
 
 	scope.Bool = make_type("bool", scope.object, 64 * 2);
 	auto& Bool = ast[scope.Bool].as_class_declaration();
 	Bool.elements.push_back(AST::make_node(ast, AST::variable_declaration{
 		builtin, interner.intern("__bool__"), scope.__i64__, zero
 	}));
-	Bool.elements.push_back(make_function("__print__", 1, scope.Int));
+	Bool.elements.push_back(make_function("__print__", scope.Int, 1, scope.Int));
 
 	scope.Str = make_type("str", scope.object, 64 * 2);
 	auto& Str = ast[scope.Str].as_class_declaration();
 	Str.elements.push_back(AST::make_node(ast, AST::variable_declaration{
 		builtin, interner.intern("__size__"), scope.__i64__, zero
 	}));
-	Str.elements.push_back(make_function("__print__", 1, scope.Int));
-	Str.elements.push_back(make_function("__len__", 1, scope.Int));
+	Str.elements.push_back(make_function("__print__", scope.Str, 1, scope.Int));
+	Str.elements.push_back(make_function("__len__", scope.Str, 1, scope.Int));
 
 
 	// Function Declarations
-	block.elements.push_back(scope.print = make_function("print", 1, scope.Int));
-	block.elements.push_back(scope.len = make_function("len", 1, scope.Int));
-	block.elements.push_back(scope.free = make_function("free", 1, scope.Int));
+	block.elements.push_back(scope.print = make_function("print", scope.root, 1, scope.Int));
+	block.elements.push_back(scope.len = make_function("len", scope.root, 1, scope.Int));
+	block.elements.push_back(scope.free = make_function("free", scope.root, 1, scope.Int));
 
 	ast[scope.root].as_block() = std::move(block); // Make sure all the updates to block get applied
 	scope.size = ast.size();

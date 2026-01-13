@@ -4,6 +4,8 @@
 #include <cassert>
 #include <cstddef>
 #include <stdexcept>
+#include <unordered_map>
+#include <unordered_set>
 #include <variant>
 #include <vector>
 
@@ -83,6 +85,9 @@ namespace AST {
 		interned_string name;
 		ref return_type;
 		size_t num_parameters;
+
+		ref overloads = absent;
+		std::unordered_map<ref, ref> overloaded_by; // maps type -> method
 	};
 	struct parameter_declaration : public node_base {
 		interned_string name;
